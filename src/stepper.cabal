@@ -1,0 +1,76 @@
+cabal-version:      2.4
+name:               stepper
+version:            0.1.0.0
+author:             Vladislav Zavialov
+maintainer:         Vladislav Zavialov <vlad.z.4096@gmail.com>
+
+executable stepper
+  main-is: Main.hs
+  other-modules:
+    Data.IText
+    Data.Inductive
+    Stepper.Options
+    Stepper.Interactive
+    Stepper.BuiltIn.GenDecls
+    Stepper.BuiltIn.Strings
+    Stepper.BuiltIn
+    Stepper.Located
+    Stepper.Parser.Context
+    Stepper.Parser.Error
+    Stepper.Parser.Token
+    Stepper.Parser.Lexer
+    Stepper.Parser
+    Stepper.Syntax.Literal
+    Stepper.Syntax.Parsed
+    Stepper.Syntax.Scoped
+    Stepper.Renamer
+    Stepper.Render.Layout
+    Stepper.Render.Font
+    Stepper.Render
+  build-depends:
+    base,
+    text,
+    bytestring,
+    transformers,
+    containers,
+    unordered-containers,
+    hashable,
+    mtl,
+    filepath,
+    directory,
+    optparse-applicative,
+    megaparsec,
+    array,
+    template-haskell,
+    gi-glib,
+    gi-gdk,
+    gi-gio,
+    gi-cairo,
+    gi-cairo-render,
+    gi-cairo-connector,
+    gi-pango,
+    gi-pangocairo,
+    gi-gtk,
+    haskell-gi-base,
+  build-tool-depends:
+    happy:happy
+  default-language: GHC2021
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    StrictData
+    NamedFieldPuns
+    PatternGuards
+    OverloadedStrings
+    DuplicateRecordFields
+    NoFieldSelectors
+    OverloadedRecordDot
+    DataKinds
+    TypeFamilies
+    StandaloneKindSignatures
+    GADTs
+    DerivingVia
+    UndecidableInstances
+    MultiWayIf
+    MagicHash
+  ghc-options: -Wall -Wno-unticked-promoted-constructors
