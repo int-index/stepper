@@ -7,6 +7,7 @@ module Stepper.Render (
   createTextLayout,
   LayoutCtx(..),
   withLayoutCtx,
+  renderStep,
   renderModule,
 ) where
 
@@ -28,6 +29,11 @@ withLayoutCtx lctx r = let ?lctx = lctx in r
 
 comic14 :: (?lctx :: LayoutCtx) => Text -> Layout
 comic14 = ?lctx.mkTextLayout "Comic Sans MS" 14000
+
+renderStep :: (?lctx :: LayoutCtx) => Int -> Layout
+renderStep n =
+  let layout = comic14 "Step: " `horiz` comic14 (Text.pack (show n))
+  in addOffset (-layout.topLeft) layout
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =
