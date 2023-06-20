@@ -20,13 +20,14 @@ executable stepper
     Stepper.Parser.Token
     Stepper.Parser.Lexer
     Stepper.Parser
-    Stepper.Syntax.Literal
+    Stepper.Syntax.Basic
     Stepper.Syntax.Parsed
     Stepper.Syntax.Scoped
     Stepper.Renamer
     Stepper.Render.Layout
     Stepper.Render.Font
     Stepper.Render
+    Stepper.Evaluator
   build-depends:
     base,
     text,

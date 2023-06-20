@@ -1,5 +1,6 @@
 module Stepper.Parser.Token
-  ( ConstrOrVariable(..),
+  ( Qualifier(..),
+    ConstrOrVariable(..),
     Token(..)
   ) where
 
@@ -10,6 +11,11 @@ import Numeric.Natural (Natural)
 data ConstrOrVariable =
     ConstrName
   | VariableName
+  deriving (Eq, Ord, Show)
+
+data Qualifier =
+    NoQualifier
+  | ModQualifier IText
   deriving (Eq, Ord, Show)
 
 data Token =
@@ -36,7 +42,8 @@ data Token =
   | TokenFrcLit Rational
   | TokenStrLit Text
   | TokenChrLit Char
-  | TokenIdent ConstrOrVariable IText
-  | TokenOpIdent ConstrOrVariable IText
+  | TokenIdent Qualifier ConstrOrVariable IText
+  | TokenOpIdent Qualifier ConstrOrVariable IText
+  | TokenPrimOp IText IText
   | TokenEOF
   deriving (Eq, Ord, Show)

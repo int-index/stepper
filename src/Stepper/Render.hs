@@ -16,7 +16,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Char as Char
 
-import Stepper.Syntax.Literal
+import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
 import Stepper.Render.Layout
 import Stepper.Render.Font
@@ -42,7 +42,7 @@ renderIdent :: (?lctx :: LayoutCtx) => IText -> Layout
 renderIdent v =
   if Char.isAlpha (Text.head v.str)
   then comic14 v.str
-  else comic14 "(" `horiz` comic14 v.str `horiz` comic14")"
+  else comic14 "(" `horiz` comic14 v.str `horiz` comic14 ")"
 
 renderExpr :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Expr TopId ctx -> Layout
 renderExpr _ (RefE v) = renderIdent v
@@ -51,6 +51,7 @@ renderExpr ctx (VarE i) =
     VB v -> renderIdent v
 renderExpr _ (ConE con) = renderIdent con
 renderExpr _ (LitE lit) = renderLit lit
+renderExpr _ (PrimE primop) = renderPrimOp primop
 renderExpr ctx (LamE varBndr@(VB v) e) =
   (comic14 "\\" `horiz` renderIdent v `horiz` comic14 " -> ")
     `vert` renderExpr (varBndr :& ctx) e
@@ -91,3 +92,7 @@ renderLit (IntL lit) = comic14 (Text.pack (show lit))
 renderLit (FrcL lit) = comic14 (Text.pack (show lit))
 renderLit (StrL lit) = comic14 (Text.pack (show lit))
 renderLit (ChrL lit) = comic14 (Text.pack (show lit))
+
+renderPrimOp ::  (?lctx :: LayoutCtx) => PrimOp -> Layout
+renderPrimOp primop = comic14 modname.str `horiz` comic14 "." `horiz` comic14 name.str
+  where (modname, name) = primopName primop

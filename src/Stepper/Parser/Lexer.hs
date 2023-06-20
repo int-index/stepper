@@ -116,8 +116,8 @@ pToken =
     TokenComma <$ P.char ',',
     TokenSemicolon <$ P.char ';',
     pNumber,
-    mkTokenIdent <$> pIdent,
-    pPunct,
+    pQIdent,
+    mkTokenOpIdent NoQualifier <$> pPunct,
     TokenStrLit <$> pStrLit,
     TokenChrLit <$> pChrLit
   ]
@@ -167,6 +167,18 @@ applyNumericSign NumericMinus = negate
 pDigit :: Parser Int
 pDigit = fmap digitToInt (P.satisfy isDigit)
 
+pQIdent :: Parser Token
+pQIdent = do
+  str <- pIdent
+  mdot <- P.optional (P.char '.')
+  case mdot of
+    Nothing -> return (mkTokenIdent NoQualifier str)
+    Just{} ->
+        mkTokenIdent modqual <$> pIdent P.<|>
+        mkTokenOpIdent modqual <$> pPunct
+      where
+        modqual = ModQualifier str
+
 pIdent :: Parser IText
 pIdent = do
   str <- P.takeWhile1P (Just "identifier") (\c -> isAlphaNum c || c == '_' || c == '\'')
@@ -184,16 +196,13 @@ isOpenClosePunctuation c =
     ClosePunctuation -> True
     _ -> False
 
-pPunct :: Parser Token
+pPunct :: Parser IText
 pPunct = do
   let isPunct c =
         not (isQuote c || isOpenClosePunctuation c) &&
         (isPunctuation c || isSymbol c)
   str <- P.takeWhile1P (Just "punctuation") isPunct
-  case str of
-    "=" -> pure TokenEq
-    "->" -> pure TokenArrRight
-    _ -> fmap mkTokenOpIdent (intern str)
+  intern str
 
 keywords :: HashMap IText Token
 keywords =
@@ -210,25 +219,27 @@ opkeywords :: HashMap IText Token
 opkeywords =
   HashMap.fromList
     [
+      (builtInStrings.__equals, TokenEq),
+      (builtInStrings.__arrow_right, TokenArrRight),
       (builtInStrings.__backslash, TokenBackslash)
     ]
 
-mkTokenIdent :: IText -> Token
-mkTokenIdent istr
+mkTokenIdent :: Qualifier -> IText -> Token
+mkTokenIdent NoQualifier istr
   | Just kw <- HashMap.lookup istr keywords
   = kw
-mkTokenIdent istr = TokenIdent constr_or_var istr
+mkTokenIdent qualifier istr = TokenIdent qualifier constr_or_var istr
   where
     constr_or_var =
       case Text.uncons istr.str of
         Just (c, _) | isUpper c -> ConstrName
         _ -> VariableName
 
-mkTokenOpIdent :: IText -> Token
-mkTokenOpIdent istr
+mkTokenOpIdent :: Qualifier -> IText -> Token
+mkTokenOpIdent NoQualifier istr
   | Just kw <- HashMap.lookup istr opkeywords
   = kw
-mkTokenOpIdent istr = TokenOpIdent constr_or_var istr
+mkTokenOpIdent qualifier istr = TokenOpIdent qualifier constr_or_var istr
   where
     constr_or_var =
       case Text.uncons istr.str of

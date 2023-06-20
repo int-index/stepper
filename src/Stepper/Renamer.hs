@@ -40,6 +40,7 @@ rnExpr topIds = go
       | otherwise = Left (RnErrNameNotFound v)
     go _ (PConE con) = return (ConE con)
     go _ (PLitE lit) = return (LitE lit)
+    go _ (PPrimE primop) = return (PrimE primop)
     go ctx (PLamE v e) =
       rnVarBndr v \varBndr -> do
         e' <- go (varBndr :& ctx) e

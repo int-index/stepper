@@ -6,7 +6,7 @@ module Stepper.Parser
   ) where
 
 import Stepper.Located
-import Stepper.Syntax.Literal
+import Stepper.Syntax.Basic
 import Stepper.Syntax.Parsed
 import Stepper.Parser.Lexer
 import Stepper.Parser.Token
@@ -19,6 +19,8 @@ import Data.Text (Text)
 import Data.IText (IText)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as List.NonEmpty
+import Data.Map (Map)
+import qualified Data.Map as Map
 }
 
 %expect 0
@@ -50,10 +52,14 @@ import qualified Data.List.NonEmpty as List.NonEmpty
   frc { L _ (TokenFrcLit _) }
   str { L _ (TokenStrLit _) }
   chr { L _ (TokenChrLit _) }
-  var { L _ (TokenIdent VariableName _) }
-  con { L _ (TokenIdent ConstrName _) }
-  varop { L _ (TokenOpIdent VariableName _) }
-  conop { L _ (TokenOpIdent ConstrName _) }
+  var { L _ (TokenIdent NoQualifier VariableName _) }
+  con { L _ (TokenIdent NoQualifier ConstrName _) }
+  varop { L _ (TokenOpIdent NoQualifier VariableName _) }
+  conop { L _ (TokenOpIdent NoQualifier ConstrName _) }
+  qvar { L _ (TokenIdent (ModQualifier _) VariableName _) }
+  qcon { L _ (TokenIdent (ModQualifier _) ConstrName _) }
+  qvarop { L _ (TokenOpIdent (ModQualifier _) VariableName _) }
+  qconop { L _ (TokenOpIdent (ModQualifier _) ConstrName _) }
   start_layout { L _ TokenStartLayout }
   end_layout { L _ TokenEndLayout }
 
@@ -107,10 +113,18 @@ AtomExpr :
     Var { PVarE $1 }
   | Con { PConE $1 }
   | Lit { PLitE $1 }
+  | Prim { PPrimE $1 }
   | '\\' Vars '->' Expr %shift { foldl (flip PLamE) $4 $2 }
   | 'case' Expr 'of' Block(Branch) %shift { PCaseE $2 (reverse $4) }
   | 'let' Block(Binding) 'in' Expr %shift { PLetE (reverse $2) $4 }
   | '(' Expr ')' { $2 }
+
+Prim :: { PrimOp }
+Prim :
+    qvar           {% lookupPrimOp (getModName $1) (getIdent $1) }
+  | qcon           {% lookupPrimOp (getModName $1) (getIdent $1) }
+  | '(' qvarop ')' {% lookupPrimOp (getModName $2) (getIdent $2) }
+  | '(' qconop ')' {% lookupPrimOp (getModName $2) (getIdent $2) }
 
 Branch :: { PBranch }
 Branch : Pat '->' Expr { PBr $1 $3 }
@@ -140,12 +154,23 @@ parseModule = runParser pModule
 parseError :: Located Token -> Parser a
 parseError ltok = P.customFailure (PsErrUnexpectedToken ltok)
 
+lookupPrimOp :: IText -> IText -> Parser PrimOp
+lookupPrimOp modname name =
+  case Map.lookup (modname, name) primops of
+    Nothing -> P.customFailure (PsErrUnknownPrimOp modname name)
+    Just p -> return p
+
+primops :: Map (IText, IText) PrimOp
+primops = Map.fromList [ (primopName primop, primop) | primop <- [minBound .. maxBound]]
+
 getNatLit (L _ (TokenNatLit a)) = a
 getIntLit (L _ (TokenIntLit a)) = a
 getFrcLit (L _ (TokenFrcLit a)) = a
 getStrLit (L _ (TokenStrLit a)) = a
 getChrLit (L _ (TokenChrLit a)) = a
-getIdent (L _ (TokenIdent _ a)) = a
-getOpIdent (L _ (TokenOpIdent _ a)) = a
+getIdent (L _ (TokenIdent _ _ a)) = a
+getOpIdent (L _ (TokenOpIdent _ _ a)) = a
+getModName (L _ (TokenIdent   (ModQualifier modname) _ _)) = modname
+getModName (L _ (TokenOpIdent (ModQualifier modname) _ _)) = modname
 
 }

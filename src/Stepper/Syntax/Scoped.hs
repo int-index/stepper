@@ -4,7 +4,7 @@ import Data.Kind
 import Data.IText
 import Data.Inductive
 
-import Stepper.Syntax.Literal
+import Stepper.Syntax.Basic
 
 type VarInfo = ()
 
@@ -32,6 +32,7 @@ data Expr ref ctx where
   VarE :: Index ctx v -> Expr ref ctx
   ConE :: Con -> Expr ref ctx
   LitE :: Lit -> Expr ref ctx
+  PrimE :: PrimOp -> Expr ref ctx
   LamE :: VarBndr v -> Expr ref (v : ctx) -> Expr ref ctx
   (:@) :: Expr ref ctx -> Expr ref ctx -> Expr ref ctx
   CaseE :: Expr ref ctx -> [Branch ref ctx] -> Expr ref ctx

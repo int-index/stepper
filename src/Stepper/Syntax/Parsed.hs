@@ -2,7 +2,7 @@ module Stepper.Syntax.Parsed where
 
 import Data.IText
 
-import Stepper.Syntax.Literal
+import Stepper.Syntax.Basic
 
 type PCon = IText
 type PVar = IText
@@ -20,6 +20,7 @@ data PExpr =
     PVarE PVar
   | PConE PCon
   | PLitE Lit
+  | PPrimE PrimOp
   | PLamE PVar PExpr
   | PAppE PExpr PExpr
   | PCaseE PExpr [PBranch]
