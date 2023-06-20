@@ -1,5 +1,6 @@
 module Stepper.Interactive (runInteractiveApp) where
 
+import Data.IText
 import Data.Text (Text)
 import qualified Data.Text as Text
 
@@ -19,12 +20,13 @@ import Stepper.Evaluator
 data AppState =
   MkAppState {
     step :: Int,
-    mod :: Module
+    mod :: Module,
+    entryPoint :: IText
   }
 
-runInteractiveApp :: Module -> IO ()
-runInteractiveApp srcMod = do
-  appStateRef <- newIORef MkAppState{step = 0, mod = srcMod}
+runInteractiveApp :: Module -> IText -> IO ()
+runInteractiveApp srcMod entryPoint = do
+  appStateRef <- newIORef MkAppState{step = 0, mod = srcMod, entryPoint}
   Just app <- Gtk.applicationNew (Just appId) []
   _ <- Gio.onApplicationActivate app (appActivate app appStateRef)
   _ <- Gio.applicationRun app Nothing
@@ -65,7 +67,7 @@ appActivate app appStateRef = do
       Gdk.KEY_space -> do
         updated <-
           atomicModifyIORef' appStateRef \appState ->
-            case evalstep appState.mod of
+            case evalstep appState.mod appState.entryPoint of
               Nothing -> (appState, False)
               Just mod' ->
                 (appState{

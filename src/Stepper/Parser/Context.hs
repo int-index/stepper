@@ -48,10 +48,11 @@ getLastToken = Parser (fmap (.lastToken) S.get)
 initialPState :: PState
 initialPState = PState baseStringPool LayoutTop Nothing
 
-runParser :: Parser a -> FilePath -> Text -> Either String a
+runParser :: Parser a -> FilePath -> Text -> Either String (a, ITextPool)
 runParser (Parser p) path str =
-  mapLeft P.errorBundlePretty $
-  P.parse (S.evalStateT p initialPState) path str
+  mapLeft P.errorBundlePretty $ do
+    (a, pState) <- P.parse (S.runStateT p initialPState) path str
+    return (a, pState.pool)
 
 getLayoutColumn :: Parser Int
 getLayoutColumn =

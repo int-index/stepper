@@ -7,6 +7,7 @@ module Stepper.Options
     parseOptions,
   ) where
 
+import Data.Text (Text)
 import Options.Applicative hiding (command)
 import qualified Options.Applicative as Opts
 
@@ -17,7 +18,8 @@ data Command =
 data Options =
   Options {
     command :: Command,
-    srcPath :: FilePath
+    srcPath :: FilePath,
+    entryPoint :: Text
   }
 
 pOptions :: Parser Options
@@ -29,7 +31,8 @@ pOptions = do
       Opts.command "interact" (info pCommandInteract (progDesc "run an interactive GUI")) <>
       Opts.command "svg" (info pCommandSvg (progDesc "generate SVG files"))
   srcPath <- strArgument (metavar "SRC" <> action "file")
-  return Options{command, srcPath}
+  entryPoint <- strOption (short 'e' <> long "entry-point")
+  return Options{command, srcPath, entryPoint}
 
 pCommandInteract :: Parser Command
 pCommandInteract = pure CommandInteract

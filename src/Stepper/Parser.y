@@ -16,7 +16,7 @@ import Stepper.Parser.Error
 import Data.Void
 import qualified Text.Megaparsec as P
 import Data.Text (Text)
-import Data.IText (IText)
+import Data.IText (IText, ITextPool)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as List.NonEmpty
 import Data.Map (Map)
@@ -145,10 +145,10 @@ Lit :
   | chr   { ChrL (getChrLit $1) }
 
 {
-parseExpr :: FilePath -> Text -> Either String PExpr
+parseExpr :: FilePath -> Text -> Either String (PExpr, ITextPool)
 parseExpr = runParser pExpr
 
-parseModule :: FilePath -> Text -> Either String PModule
+parseModule :: FilePath -> Text -> Either String (PModule, ITextPool)
 parseModule = runParser pModule
 
 parseError :: Located Token -> Parser a
