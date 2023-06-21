@@ -7,6 +7,8 @@ module Stepper.Parser.Context
     pushLayoutColumn,
     setLastToken,
     getLastToken,
+    setBeginningOfLine,
+    getBeginningOfLine,
   ) where
 
 import Control.Applicative (Alternative)
@@ -30,7 +32,8 @@ data PState =
   PState {
     pool :: ITextPool,
     layoutContext :: LayoutContext,
-    lastToken :: Maybe Token
+    lastToken :: Maybe Token,
+    beginningOfLine :: Bool
   }
 
 newtype Parser a = Parser (S.StateT PState (P.Parsec PsError Text) a)
@@ -45,8 +48,17 @@ setLastToken tok = Parser (S.modify updatePState)
 getLastToken :: Parser (Maybe Token)
 getLastToken = Parser (fmap (.lastToken) S.get)
 
+setBeginningOfLine :: Bool -> Parser ()
+setBeginningOfLine bol = Parser (S.modify updatePState)
+  where
+    updatePState :: PState -> PState
+    updatePState pstate = pstate { beginningOfLine = bol }
+
+getBeginningOfLine :: Parser Bool
+getBeginningOfLine = Parser (fmap (.beginningOfLine) S.get)
+
 initialPState :: PState
-initialPState = PState baseStringPool LayoutTop Nothing
+initialPState = PState baseStringPool LayoutTop Nothing True
 
 runParser :: Parser a -> FilePath -> Text -> Either String (a, ITextPool)
 runParser (Parser p) path str =

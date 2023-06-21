@@ -7,3 +7,5 @@ fib' = \a b i ->
       let b' = Natural.add a b
           i' = Natural.sub i 1
       in fib' b b' i'
+
+result = fib 11

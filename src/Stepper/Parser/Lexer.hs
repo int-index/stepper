@@ -29,14 +29,14 @@ settingLastToken f m = do
 
 parseToken :: Parser (Located Token)
 parseToken = settingLastToken (.located) do
-  is_nl <- pSpaces
+  pSpaces
   is_eof <- P.atEnd
   pos <- P.getSourcePos     -- FIXME: this is slow (linear pass from the start of the string)
   if is_eof then do
     let loc = mkSourceSpan pos pos
     return (L loc TokenEOF)
   else
-    parseLayoutToken is_nl pos P.<|>
+    parseLayoutToken pos P.<|>
     parseLocatedToken pos pToken
 
 parseLocatedToken ::
@@ -45,27 +45,30 @@ parseLocatedToken ::
   Parser (Located Token)
 parseLocatedToken pos pTok = do
   tok <- pTok
+  setBeginningOfLine False
   pos' <- P.getSourcePos     -- FIXME: this is slow (linear pass from the start of the string)
   let loc = mkSourceSpan pos pos'
   return (L loc tok)
 
 parseLayoutToken ::
-  Bool ->
   SourcePos ->
   Parser (Located Token)
-parseLayoutToken is_nl pos = do
+parseLayoutToken pos = do
+  bol <- getBeginningOfLine
   layout_col <- getLayoutColumn
   m_last_tok <- getLastToken
   let layout_herald = maybe False isLayoutHerald m_last_tok
   if
-    | is_nl, col == layout_col -> emit_semi
+    | bol, col == layout_col -> emit_semi
     | col < layout_col -> end_layout
     | layout_herald -> curly_brace P.<|> start_layout
     | otherwise -> P.empty
   where
     col = unPos pos.sourceColumn
     loc = mkSourceSpan pos pos
-    emit_semi = return (L loc TokenSemicolon)
+    emit_semi = do
+      setBeginningOfLine False
+      return (L loc TokenSemicolon)
     end_layout = do
       popLayoutColumn
       return (L loc TokenEndLayout)
@@ -75,8 +78,9 @@ parseLayoutToken is_nl pos = do
     curly_brace = parseLocatedToken pos pLCuBr
 
 -- Returns True if a newline was encountered.
-pSpaces :: Parser Bool
+pSpaces :: Parser ()
 pSpaces = do
+  bol <- getBeginningOfLine
   -- Skip whitespace on the current line
   _ <- P.takeWhileP label is_spc
   -- Skip the newline, if any
@@ -84,7 +88,7 @@ pSpaces = do
   when nl do
     -- Skip whitespace on subsequent lines
     void $ P.takeWhileP label (\c -> is_spc c || is_nl c)
-  return nl
+  setBeginningOfLine (bol || nl)
   where
     label = Just "whitespace"
 
