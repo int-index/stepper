@@ -12,7 +12,6 @@ module Stepper.Render (
 ) where
 
 import Data.Inductive
-import Data.IText
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Char as Char
@@ -42,13 +41,17 @@ renderModule extents (Mod bs) =
 renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
 renderTopBinding (TopBind v e) =
   padded $ -- framed $
-    renderIdent v `horiz` comic14 " = " `horiz` renderExpr topPrec HNil e
+    renderTopId v `horiz` comic14 " = " `horiz` renderExpr topPrec HNil e
 
-renderIdent :: (?lctx :: LayoutCtx) => IText -> Layout
+renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
+renderTopId (TopIdUser v) = renderIdent v.str
+renderTopId (TopIdGen v n) = renderIdent (v.str <> Text.pack (':' : show n))
+
+renderIdent :: (?lctx :: LayoutCtx) => Text -> Layout
 renderIdent v =
-  if Char.isAlpha (Text.head v.str)
-  then comic14 v.str
-  else comic14 "(" `horiz` comic14 v.str `horiz` comic14 ")"
+  if Char.isAlpha (Text.head v)
+  then comic14 v
+  else comic14 "(" `horiz` comic14 v `horiz` comic14 ")"
 
 type Prec = Int
 
@@ -62,16 +65,16 @@ opPrec = 2
 topPrec = 0
 
 renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr TopId ctx -> Layout
-renderExpr _ _ (RefE v) = renderIdent v
+renderExpr _ _ (RefE v) = renderTopId v
 renderExpr _ ctx (VarE i) =
   case ctx !!& i of
-    VB v -> renderIdent v
-renderExpr _ _ (ConE con) = renderIdent con
+    VB v -> renderIdent v.str
+renderExpr _ _ (ConE con) = renderIdent con.str
 renderExpr _ _ (LitE lit) = renderLit lit
 renderExpr _ _ (PrimE primop) = renderPrimOp primop
 renderExpr prec ctx (LamE varBndr@(VB v) e) =
   framedIf (prec > topPrec) $
-  (comic14 "\\" `horiz` renderIdent v `horiz` comic14 " -> ")
+  (comic14 "\\" `horiz` renderIdent v.str `horiz` comic14 " -> ")
     `vert` renderExpr topPrec (varBndr :& ctx) e
 renderExpr prec ctx (e1 :@ e2) =
   framedIf (prec >= appPrec) $
@@ -98,7 +101,7 @@ renderBindings ctx = go
     go (b :& bs) = renderBinding ctx b `vert` go bs
 
 renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding TopId ctx v -> Layout
-renderBinding ctx (Bind (VB v) e) = renderIdent v `horiz` comic14 " = " `horiz` renderExpr topPrec ctx e
+renderBinding ctx (Bind (VB v) e) = renderIdent v.str `horiz` comic14 " = " `horiz` renderExpr topPrec ctx e
 
 renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> [Branch TopId ctx] -> Layout
 renderBranches ctx bs = foldr1 vert (map (renderBranch ctx) bs)

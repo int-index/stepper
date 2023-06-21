@@ -17,7 +17,11 @@ data VarBndr v where
 deriving instance Show (VarBndr v)
 
 type Con = IText
-type TopId = IText
+
+data TopId =
+    TopIdUser IText
+  | TopIdGen IText Int
+  deriving (Eq, Ord, Show)
 
 data Module = Mod [TopBinding]
   deriving Show

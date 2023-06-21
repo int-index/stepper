@@ -67,7 +67,7 @@ appActivate app appStateRef = do
       Gdk.KEY_space -> do
         updated <-
           atomicModifyIORef' appStateRef \appState ->
-            case evalstep appState.mod appState.entryPoint of
+            case evalstep appState.mod (TopIdUser appState.entryPoint) of
               Nothing -> (appState, False)
               Just mod' ->
                 (appState{

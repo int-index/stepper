@@ -28,7 +28,7 @@ rnModule (PMod bs) = do
 rnBinding :: Set PVar -> PBinding -> Renamer TopBinding
 rnBinding topIds (PBind v e) = do
   e' <- rnExpr topIds HNil e
-  return (TopBind v e')
+  return (TopBind (TopIdUser v) e')
 
 rnExpr :: forall ctx. Set PVar -> HList VarBndr ctx -> PExpr -> Renamer (Expr TopId ctx)
 rnExpr topIds = go
@@ -36,7 +36,7 @@ rnExpr topIds = go
     go :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (Expr TopId ctx1)
     go ctx (PVarE v)
       | Just (MkSome i) <- lookupLocal ctx v = return (VarE i)
-      | Set.member v topIds = return (RefE v)
+      | Set.member v topIds = return (RefE (TopIdUser v))
       | otherwise = Left (RnErrNameNotFound v)
     go _ (PConE con) = return (ConE con)
     go _ (PLitE lit) = return (LitE lit)
