@@ -42,7 +42,7 @@ renderModule extents (Mod bs) =
 renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
 renderTopBinding (TopBind v e) =
   padded $ -- framed $
-    renderIdent v `horiz` comic14 " = " `horiz` renderExpr HNil e
+    renderIdent v `horiz` comic14 " = " `horiz` renderExpr topPrec HNil e
 
 renderIdent :: (?lctx :: LayoutCtx) => IText -> Layout
 renderIdent v =
@@ -50,30 +50,44 @@ renderIdent v =
   then comic14 v.str
   else comic14 "(" `horiz` comic14 v.str `horiz` comic14 ")"
 
-renderExpr :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Expr TopId ctx -> Layout
-renderExpr _ (RefE v) = renderIdent v
-renderExpr ctx (VarE i) =
+type Prec = Int
+
+framedIf :: Bool -> Layout -> Layout
+framedIf True  = framed . padded
+framedIf False = id
+
+topPrec, opPrec, appPrec :: Prec
+appPrec = 4
+opPrec = 2
+topPrec = 0
+
+renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr TopId ctx -> Layout
+renderExpr _ _ (RefE v) = renderIdent v
+renderExpr _ ctx (VarE i) =
   case ctx !!& i of
     VB v -> renderIdent v
-renderExpr _ (ConE con) = renderIdent con
-renderExpr _ (LitE lit) = renderLit lit
-renderExpr _ (PrimE primop) = renderPrimOp primop
-renderExpr ctx (LamE varBndr@(VB v) e) =
+renderExpr _ _ (ConE con) = renderIdent con
+renderExpr _ _ (LitE lit) = renderLit lit
+renderExpr _ _ (PrimE primop) = renderPrimOp primop
+renderExpr prec ctx (LamE varBndr@(VB v) e) =
+  framedIf (prec > topPrec) $
   (comic14 "\\" `horiz` renderIdent v `horiz` comic14 " -> ")
-    `vert` renderExpr (varBndr :& ctx) e
-renderExpr ctx (e1 :@ e2) =
-  comic14 "(" `horiz` renderExpr ctx e1 `horiz` comic14 " "
-    `horiz` renderExpr ctx e2 `horiz` comic14 ")"
-renderExpr ctx (CaseE e bs) =
-  (comic14 "case " `horiz` renderExpr ctx e `horiz` comic14 " of")
+    `vert` renderExpr topPrec (varBndr :& ctx) e
+renderExpr prec ctx (e1 :@ e2) =
+  framedIf (prec >= appPrec) $
+  renderExpr opPrec ctx e1 `horiz` comic14 " " `horiz` renderExpr appPrec ctx e2
+renderExpr prec ctx (CaseE e bs) =
+  framedIf (prec > topPrec) $
+  (comic14 "case " `horiz` renderExpr topPrec ctx e `horiz` comic14 " of")
     `vert` addOffset 0{x=20} (renderBranches ctx bs)
-renderExpr ctx (LetE bs e) =
+renderExpr prec ctx (LetE bs e) =
+  framedIf (prec > topPrec) $
   let varBndrs = hmap getBindingVarBndr bs
       ctx' = varBndrs ++& ctx
   in
     (comic14 "let " `horiz` renderBindings ctx' bs)
     `vert`
-    (comic14 "in " `horiz` renderExpr ctx' e)
+    (comic14 "in " `horiz` renderExpr topPrec ctx' e)
 
 renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding TopId ctx) out -> Layout
 renderBindings ctx = go
@@ -84,14 +98,14 @@ renderBindings ctx = go
     go (b :& bs) = renderBinding ctx b `vert` go bs
 
 renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding TopId ctx v -> Layout
-renderBinding ctx (Bind (VB v) e) = renderIdent v `horiz` comic14 " = " `horiz` renderExpr ctx e
+renderBinding ctx (Bind (VB v) e) = renderIdent v `horiz` comic14 " = " `horiz` renderExpr topPrec ctx e
 
 renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> [Branch TopId ctx] -> Layout
 renderBranches ctx bs = foldr1 vert (map (renderBranch ctx) bs)
 
 renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId ctx -> Layout
-renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` comic14 " -> " `horiz` renderExpr ctx e
-renderBranch ctx (WildP :-> e) = comic14 "_" `horiz` comic14 " -> " `horiz` renderExpr ctx e
+renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
+renderBranch ctx (WildP :-> e) = comic14 "_" `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
 renderBranch _ (_ :-> _) = comic14 "todo:branch"
 
 renderLit :: (?lctx :: LayoutCtx) => Lit -> Layout
