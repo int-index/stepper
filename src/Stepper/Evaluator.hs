@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 module Stepper.Evaluator where
 
 import Data.Map (Map)
@@ -7,6 +9,7 @@ import Data.Inductive
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
+import Data.Bifunctor
 
 evalstep :: Module -> TopId -> Maybe Module  -- Nothing <=> nothing to reduce
 evalstep (Mod bs) = go
@@ -73,17 +76,34 @@ evalstepExpr env ctx (RefE ref)
   | otherwise = Jump ref
 evalstepExpr env ctx (LamE varBndr e1 :@ e2) =
   let x = freshId env varBndr
-  in Update (ctx (substExpr (Const (RefE x) :& HNil) e1)) [TopBind x e2]
+  in Update (ctx (substExpr (\case Z -> Right $ RefE x) e1)) [TopBind x e2]
 evalstepExpr env ctx (e1 :@ e2) =
   evalstepExpr env (\e1' -> ctx (e1' :@ e2)) e1
 -- evalstepEpxr ctx (CaseE (LitE _) bs) = ...
 -- evalstepExpr ctx (CaseE e bs) = evalstepExpr (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr _ _ _ = Stuck
 
-substExpr :: HList (Const (Expr ref ctx')) ctx -> Expr ref ctx -> Expr ref ctx'
-substExpr subst (VarE i) = getConst (subst !!& i)
-substExpr subst (LamE varBndr e) =
-  LamE varBndr (substExpr (Const (VarE Z) :& hmap (error "todo: substExpr.shift") subst) e)
+substExpr :: forall ctx ctx' ref . (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> Expr ref ctx -> Expr ref ctx'
+substExpr subst (VarE i) = case subst i of
+  Left v -> VarE v
+  Right e -> e
+substExpr subst (RefE r) = RefE r
+substExpr subst (ConE c) = ConE c
+substExpr subst (LitE l) = LitE l
+substExpr subst (PrimE p) = PrimE p
+substExpr subst (f :@ x) = substExpr subst f :@ substExpr subst x
+substExpr subst (LamE varBndr e) = LamE varBndr $ substExpr (\case Z -> Left Z; S n -> bimap S (substExpr $ Left . S) $ subst n) e
+substExpr subst (CaseE s c) = CaseE (substExpr subst s) $ fmap (substBranch subst) c
+substExpr subst (LetE (h :: HList _ out) e) = LetE (hmap (\(Bind b e) -> Bind b $ substExpr (shiftN @out @ctx subst h) e) h) $ substExpr (shiftN @out @ctx subst h) e
+
+substBranch :: (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> Branch ref ctx -> Branch ref ctx'
+substBranch subst (p :-> e) = p :-> substExpr (shiftN subst $ patVarBndrs p) e
+
+shiftN :: forall out ctx ctx' ref t f . (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> HList f out -> Index (out ++ ctx) t -> Either (Index (out ++ ctx') t) (Expr ref (out ++ ctx'))
+shiftN subst HNil Z = subst Z
+shiftN subst HNil (S n) = shiftN (subst . S) HNil n
+shiftN subst (x :& xs) Z = Left Z
+shiftN subst (x :& xs) (S n) = bimap S (substExpr $ Left . S) $ shiftN subst xs n
 
 evalstepIntegerBinOp ::
   ExprCtx ->
