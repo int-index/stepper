@@ -61,7 +61,9 @@ renderExpr _ (PrimE primop) = renderPrimOp primop
 renderExpr ctx (LamE varBndr@(VB v) e) =
   (comic14 "\\" `horiz` renderIdent v `horiz` comic14 " -> ")
     `vert` renderExpr (varBndr :& ctx) e
-renderExpr ctx (e1 :@ e2) = renderExpr ctx e1 `horiz` comic14 " " `horiz` renderExpr ctx e2
+renderExpr ctx (e1 :@ e2) =
+  comic14 "(" `horiz` renderExpr ctx e1 `horiz` comic14 " "
+    `horiz` renderExpr ctx e2 `horiz` comic14 ")"
 renderExpr ctx (CaseE e bs) =
   (comic14 "case " `horiz` renderExpr ctx e `horiz` comic14 " of")
     `vert` addOffset 0{x=20} (renderBranches ctx bs)

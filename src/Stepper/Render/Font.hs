@@ -20,7 +20,7 @@ createFontDescription fontCacheRef fontFamily fontSize = do
   case Map.lookup k fontCache0.fontDescriptionCache of
     Just fontDescription -> return fontDescription
     Nothing -> do
-      putStrLn $ "createFontDescription: cache miss " ++ show k
+      -- putStrLn $ "createFontDescription: cache miss " ++ show k
       fontDescription <- Pango.fontDescriptionNew
       Pango.fontDescriptionSetFamily fontDescription fontFamily
       Pango.fontDescriptionSetSize fontDescription (fromIntegral fontSize)
@@ -43,7 +43,7 @@ createTextLayout fontCacheRef fontFamily fontSize str = do
   case Map.lookup k fontCache0.textLayoutCache of
     Just textLayout -> return textLayout
     Nothing -> do
-      liftIO $ putStrLn $ "createTextLayout: cache miss " ++ show k
+      -- liftIO $ putStrLn $ "createTextLayout: cache miss " ++ show k
       fontDescription <- liftIO $ createFontDescription fontCacheRef fontFamily fontSize
       pangoLayout <- Cairo.getContext >>= PangoCairo.createLayout
       Pango.layoutSetText pangoLayout str (-1)
