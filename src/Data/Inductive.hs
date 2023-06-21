@@ -17,6 +17,15 @@ data Index xs x where
   Z :: Index (x : xs) x
   S :: Index xs x -> Index (y : xs) x
 
+-- There can be no index without any elements.
+noElements :: Index '[] x -> a
+noElements i = case i of {}
+
+-- TODO: rewrite rule to simplify this to unsafeCoerce
+extendIndexBase :: forall ys xs x. Index xs x -> Index (xs ++ ys) x
+extendIndexBase Z = Z
+extendIndexBase (S x) = S (extendIndexBase @ys x)
+
 indexToInt :: Index xs x -> Int
 indexToInt Z = 0
 indexToInt (S n) = 1 + indexToInt n
@@ -40,6 +49,10 @@ type (++) :: [a] -> [a] -> [a]
 type family xs ++ ys where
   '[] ++ ys = ys
   (x : xs) ++ ys = x : (xs ++ ys)
+
+assocListAppend :: forall xs ys zs f r. HList f xs -> (((xs ++ ys) ++ zs) ~ (xs ++ (ys ++ zs)) => r) -> r
+assocListAppend HNil cont = cont
+assocListAppend (_ :& xs) cont = assocListAppend @_ @ys @zs xs cont
 
 type HList :: (a -> Type) -> [a] -> Type
 data HList f xs where
