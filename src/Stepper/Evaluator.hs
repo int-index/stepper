@@ -76,34 +76,45 @@ evalstepExpr env ctx (RefE ref)
   | otherwise = Jump ref
 evalstepExpr env ctx (LamE varBndr e1 :@ e2) =
   let x = freshId env varBndr
-  in Update (ctx (substExpr (\case Z -> Right $ RefE x) e1)) [TopBind x e2]
+  in Update (ctx (substExpr (\case Z -> SubstE $ RefE x) e1)) [TopBind x e2]
 evalstepExpr env ctx (e1 :@ e2) =
   evalstepExpr env (\e1' -> ctx (e1' :@ e2)) e1
 -- evalstepEpxr ctx (CaseE (LitE _) bs) = ...
 -- evalstepExpr ctx (CaseE e bs) = evalstepExpr (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr _ _ _ = Stuck
 
-substExpr :: forall ctx ctx' ref . (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> Expr ref ctx -> Expr ref ctx'
+type SubstDom ctx t = Index ctx t
+
+data SubstCod ctx ref t where
+  SubstI :: Index ctx t -> SubstCod ctx ref t
+  SubstE :: (forall ctx'. Expr ref ctx') -> SubstCod ctx ref t
+
+type Subst ctx ctx' ref = forall t. SubstDom ctx t -> SubstCod ctx' ref t
+
+mapSubstCod f (SubstI i) = SubstI (f i)
+mapSubstCod _ (SubstE e) = SubstE e
+
+substExpr :: forall ctx ctx' ref . Subst ctx ctx' ref -> Expr ref ctx -> Expr ref ctx'
 substExpr subst (VarE i) = case subst i of
-  Left v -> VarE v
-  Right e -> e
+  SubstI v -> VarE v
+  SubstE e -> e
 substExpr subst (RefE r) = RefE r
 substExpr subst (ConE c) = ConE c
 substExpr subst (LitE l) = LitE l
 substExpr subst (PrimE p) = PrimE p
 substExpr subst (f :@ x) = substExpr subst f :@ substExpr subst x
-substExpr subst (LamE varBndr e) = LamE varBndr $ substExpr (\case Z -> Left Z; S n -> bimap S (substExpr $ Left . S) $ subst n) e
+substExpr subst (LamE varBndr e) = LamE varBndr $ substExpr (\case Z -> SubstI Z; S n -> mapSubstCod S $ subst n) e
 substExpr subst (CaseE s c) = CaseE (substExpr subst s) $ fmap (substBranch subst) c
 substExpr subst (LetE (h :: HList _ out) e) = LetE (hmap (\(Bind b e) -> Bind b $ substExpr (shiftN @out @ctx subst h) e) h) $ substExpr (shiftN @out @ctx subst h) e
 
-substBranch :: (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> Branch ref ctx -> Branch ref ctx'
+substBranch :: Subst ctx ctx' ref -> Branch ref ctx -> Branch ref ctx'
 substBranch subst (p :-> e) = p :-> substExpr (shiftN subst $ patVarBndrs p) e
 
-shiftN :: forall out ctx ctx' ref t f . (forall t . Index ctx t -> Either (Index ctx' t) (Expr ref ctx')) -> HList f out -> Index (out ++ ctx) t -> Either (Index (out ++ ctx') t) (Expr ref (out ++ ctx'))
+shiftN :: forall out ctx ctx' ref f . Subst ctx ctx' ref -> HList f out -> Subst (out ++ ctx) (out ++ ctx') ref
 shiftN subst HNil Z = subst Z
 shiftN subst HNil (S n) = shiftN (subst . S) HNil n
-shiftN subst (x :& xs) Z = Left Z
-shiftN subst (x :& xs) (S n) = bimap S (substExpr $ Left . S) $ shiftN subst xs n
+shiftN subst (x :& xs) Z = SubstI Z
+shiftN subst (x :& xs) (S n) = mapSubstCod S $ shiftN subst xs n
 
 evalstepIntegerBinOp ::
   ExprCtx ->
