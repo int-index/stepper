@@ -30,6 +30,12 @@ data Module = Mod [TopBinding]
 data TopBinding = TopBind TopId (ClosedExpr TopId)
   deriving Show
 
+getTopBindingId :: TopBinding -> TopId
+getTopBindingId (TopBind name _) = name
+
+getTopBindingExpr :: TopBinding -> ClosedExpr TopId
+getTopBindingExpr (TopBind _ e) = e
+
 type ClosedExpr :: Type -> Type
 type ClosedExpr ref = Expr ref '[]
 

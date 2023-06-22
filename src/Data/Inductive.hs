@@ -88,3 +88,11 @@ hmap f (x :& xs) = f x :& hmap f xs
 htraverse :: Applicative m => (forall x. f x -> m (g x)) -> HList f xs -> m (HList g xs)
 htraverse _ HNil = pure HNil
 htraverse f (x :& xs) = liftA2 (:&) (f x) (htraverse f xs)
+
+htraverse_ :: Applicative m => (forall x. f x -> m ()) -> HList f xs -> m ()
+htraverse_ _ HNil = pure ()
+htraverse_ f (x :& xs) = f x *> htraverse_ f xs
+
+hfoldMap :: Monoid m => (forall x. f x -> m) -> HList f xs -> m
+hfoldMap _ HNil = mempty
+hfoldMap f (x :& xs) = f x <> hfoldMap f xs

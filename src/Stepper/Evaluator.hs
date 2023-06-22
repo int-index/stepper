@@ -2,24 +2,33 @@ module Stepper.Evaluator where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Functor.Const
 import Data.Inductive
 import Numeric.Natural
 import Control.Monad.State
+import Data.Foldable
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
 
 evalstep :: Module -> TopId -> Maybe Module  -- Nothing <=> nothing to reduce
-evalstep (Mod bs) = go
+evalstep (Mod bs) entryPoint = go Set.empty entryPoint
   where
-    env = Map.fromList [ (name, b) | b@(TopBind name _) <- bs ]
-    go name = do
-      b <- Map.lookup name env
-      case evalstepTopBinding env b of
-        Stuck -> Nothing
-        Update b' bs' -> Just (Mod (updateTopBindings b' bs' bs))
-        Jump name' -> go name'
+    env = mkTopEnv bs
+    go visited name
+      | Set.member name visited = Nothing
+      | otherwise = do
+          b <- Map.lookup name env
+          case evalstepTopBinding env b of
+            Stuck -> Nothing
+            Update b' bs' -> Just (Mod (gcTopBindings entryPoint (updateTopBindings b' bs' bs)))
+            Jump name' -> go (Set.insert name visited) name'
+
+
+mkTopEnv :: [TopBinding] -> Map TopId TopBinding
+mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind name _) <- bs ]
 
 updateTopBindings :: TopBinding -> [TopBinding] -> [TopBinding] -> [TopBinding]
 updateTopBindings _ _ [] = []
@@ -202,3 +211,41 @@ matchIntegerBinOp primop =
     Integer_mul -> Just (*)
     Integer_div -> Just div
     _ -> Nothing
+
+gcTopBindings :: TopId -> [TopBinding] -> [TopBinding]
+gcTopBindings root topBinds = filter isLive topBinds
+  where
+    env = mkTopEnv topBinds
+    liveSet =
+      case getExpr root of
+        Nothing -> Set.empty
+        Just e -> execState (goExpr e) (Set.singleton root)
+
+    isLive :: TopBinding -> Bool
+    isLive b = Set.member (getTopBindingId b) liveSet
+
+    getExpr :: TopId -> Maybe (ClosedExpr TopId)
+    getExpr name = fmap getTopBindingExpr (Map.lookup name env)
+
+    goExpr :: Expr TopId ctx -> State (Set TopId) ()
+    goExpr (RefE ref) = do
+      visited <- get
+      if Set.member ref visited
+      then return ()
+      else do
+        modify (Set.insert ref)
+        traverse_ goExpr (getExpr ref)
+    goExpr (e1 :@ e2) = do
+      goExpr e1
+      goExpr e2
+    goExpr (LamE _ e) = goExpr e
+    goExpr (CaseE e bs) = do
+      goExpr e
+      traverse_ (\(_ :-> e1) -> goExpr e1) bs
+    goExpr (LetE bs e) = do
+      htraverse_ (goExpr . getBindingExpr) bs
+      goExpr e
+    goExpr VarE{} = return ()
+    goExpr ConE{} = return ()
+    goExpr LitE{} = return ()
+    goExpr PrimE{} = return ()

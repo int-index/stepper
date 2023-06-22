@@ -59,7 +59,8 @@ executable stepper
   default-extensions:
     ApplicativeDo
     BlockArguments
-    StrictData
+    -- FIXME: StrictData disabled to make examples/Cyclic.stepper work
+    NoStrictData
     NamedFieldPuns
     PatternGuards
     OverloadedStrings
