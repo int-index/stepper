@@ -63,7 +63,12 @@ renderTopBinding (TopBind v e) =
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
 renderTopId (TopIdUser v) = renderIdent v.str
-renderTopId (TopIdGen v n) = renderIdent (v.str <> Text.pack (':' : show n))
+renderTopId (TopIdGen v n) =
+  renderIdent v.str `horiz` addOffset subOffset sub
+  where
+    subOffset = 0{y = sub.extents.h `div` 6}
+    sub = comic8 (Text.pack (show n))
+    comic8 = ?lctx.mkTextLayout "Comic Sans MS" 8000
 
 renderIdent :: (?lctx :: LayoutCtx) => Text -> Layout
 renderIdent v =
