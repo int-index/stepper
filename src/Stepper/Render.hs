@@ -36,11 +36,29 @@ renderStep n =
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =
-  centered extents $ foldr1 vert (map renderTopBinding bs)
+  let Just layout = fill extents (map renderTopBinding bs)
+  in addOffset (-layout.topLeft) layout
+
+fill :: (?lctx :: LayoutCtx) => Extents -> [Layout] -> Maybe Layout
+fill _ [] = Nothing
+fill extents (item:items) =
+  let (rowLayout, items') = row item items
+  in case fill extents items' of
+       Nothing -> Just rowLayout
+       Just layouts -> Just (rowLayout `vert` layouts)
+  where
+    row :: Layout -> [Layout] -> (Layout, [Layout])
+    row rowLayout [] = (rowLayout, [])
+    row rowLayout rowItems@(rowItem : rowItems')
+      | xPos' < extents.w = row rowLayout' rowItems'
+      | otherwise = (rowLayout, rowItems)
+      where
+        xPos' = rowLayout'.bottomRight.x
+        rowLayout' = rowLayout `horiz` rowItem
 
 renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
 renderTopBinding (TopBind v e) =
-  padded $ -- framed $
+  padded $ framed $ padded $
     renderTopId v `horiz` comic14 " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout

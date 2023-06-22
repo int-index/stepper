@@ -15,6 +15,7 @@ import Control.Monad
 
 import Stepper.Syntax.Scoped
 import Stepper.Render
+import Stepper.Render.Layout (vert)
 import Stepper.Evaluator
 
 data AppState =
@@ -56,7 +57,7 @@ appActivate app appStateRef = do
       renderBackground w h
       withLayoutCtx LCtx{mkTextLayout} $
         (
-          renderStep appState.step <>
+          renderStep appState.step `vert`
           renderModule (E{w = floor w, h = floor h}) appState.mod
         ).render 0
       return True
