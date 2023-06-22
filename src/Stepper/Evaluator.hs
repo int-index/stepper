@@ -4,6 +4,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Functor.Const
 import Data.Inductive
+import Numeric.Natural
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
@@ -75,10 +76,16 @@ freshId env (VB x) =
 
 evalstepExpr :: TopEnv -> ExprCtx -> ClosedExpr TopId -> Outcome
 evalstepExpr env ctx (PrimE primop :@ lhs :@ rhs)
+  | Just f <- matchNaturalBinOp primop
+  = evalstepNaturalBinOp ctx f lhs rhs `orIfStuck`
+    evalstepExpr env (\lhs' -> ctx (PrimE primop :@ lhs' :@ rhs)) lhs `orIfStuck`
+    evalstepExpr env (\rhs' -> ctx (PrimE primop :@ lhs :@ rhs')) rhs
   | Just f <- matchIntegerBinOp primop
   = evalstepIntegerBinOp ctx f lhs rhs `orIfStuck`
     evalstepExpr env (\lhs' -> ctx (PrimE primop :@ lhs' :@ rhs)) lhs `orIfStuck`
     evalstepExpr env (\rhs' -> ctx (PrimE primop :@ lhs :@ rhs')) rhs
+evalstepExpr env ctx (CaseE (LitE lit) bs)
+  = evalstepCaseOfLit env ctx lit bs
 evalstepExpr env ctx (RefE ref)
   | Just (TopBind _ e) <- Map.lookup ref env
   , isWHNF e
@@ -97,6 +104,40 @@ evalstepExpr env ctx (e1 :@ e2) =
 evalstepExpr env ctx (CaseE e bs) = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr _ _ _ = Stuck
 
+evalstepCaseOfLit :: TopEnv -> ExprCtx -> Lit -> [Branch TopId '[]] -> Outcome
+evalstepCaseOfLit _ _ _ [] = Stuck
+evalstepCaseOfLit env ctx lit ((p :-> e):bs) =
+  case p of
+    VarP{} ->
+      let subst = mkSubst (Const (LitE lit) :& HNil)
+      in Update (ctx (substExpr subst e)) []
+    ConP{} -> Stuck
+    LitP lit' ->
+      case matchLit lit lit' of
+        Nothing    -> Stuck
+        Just True  -> Update (ctx e) []
+        Just False -> evalstepCaseOfLit env ctx lit bs
+    WildP  -> Update (ctx e) []
+
+matchLit :: Lit -> Lit -> Maybe Bool
+matchLit (NatL a) (NatL b) = Just (a == b)
+matchLit (IntL a) (IntL b) = Just (a == b)
+matchLit (FrcL a) (FrcL b) = Just (a == b)
+matchLit (StrL a) (StrL b) = Just (a == b)
+matchLit (ChrL a) (ChrL b) = Just (a == b)
+matchLit _ _ = Nothing
+
+evalstepNaturalBinOp ::
+  ExprCtx ->
+  (Natural -> Natural -> Natural) ->
+  ClosedExpr TopId ->
+  ClosedExpr TopId ->
+  Outcome
+evalstepNaturalBinOp ctx f lhs rhs
+  | LitE (NatL a) <- lhs, LitE (NatL b) <- rhs
+  = Update (ctx (LitE (NatL (f a b)))) []
+  | otherwise = Stuck
+
 evalstepIntegerBinOp ::
   ExprCtx ->
   (Integer -> Integer -> Integer) ->
@@ -107,6 +148,15 @@ evalstepIntegerBinOp ctx f lhs rhs
   | LitE (IntL a) <- lhs, LitE (IntL b) <- rhs
   = Update (ctx (LitE (IntL (f a b)))) []
   | otherwise = Stuck
+
+matchNaturalBinOp :: PrimOp -> Maybe (Natural -> Natural -> Natural)
+matchNaturalBinOp primop =
+  case primop of
+    Natural_add -> Just (+)
+    Natural_sub -> Just (-)
+    Natural_mul -> Just (*)
+    Natural_div -> Just div
+    _ -> Nothing
 
 matchIntegerBinOp :: PrimOp -> Maybe (Integer -> Integer -> Integer)
 matchIntegerBinOp primop =

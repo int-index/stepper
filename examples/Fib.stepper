@@ -8,4 +8,4 @@ fib' = \a b i ->
           i' = Natural.sub i 1
       in fib' b b' i'
 
-result = fib (Integer.add +1 (Integer.mul +2 +5))
+result = fib (Natural.add 1 (Natural.mul 2 5))
