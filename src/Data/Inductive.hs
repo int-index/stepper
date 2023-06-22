@@ -54,6 +54,10 @@ assocListAppend :: forall xs ys zs f r. HList f xs -> (((xs ++ ys) ++ zs) ~ (xs 
 assocListAppend HNil cont = cont
 assocListAppend (_ :& xs) cont = assocListAppend @_ @ys @zs xs cont
 
+rightIdListAppend :: forall xs f r. HList f xs -> ((xs ++ '[]) ~ xs => r) -> r
+rightIdListAppend HNil cont = cont
+rightIdListAppend (_ :& xs) cont = rightIdListAppend xs cont
+
 type HList :: (a -> Type) -> [a] -> Type
 data HList f xs where
   HNil :: HList f '[]

@@ -113,6 +113,9 @@ extendBindingCtx (Bind varBndr e) = Bind varBndr (extendExprCtx @ctx' e)
 getBindingVarBndr :: Binding ref ctx v -> VarBndr v
 getBindingVarBndr (Bind varBndr _) = varBndr
 
+getBindingExpr :: Binding ref ctx v -> Expr ref ctx
+getBindingExpr (Bind _ e) = e
+
 data SubstResult ref ctx x where
   SubstI :: Index ctx x -> SubstResult ref ctx x
   SubstE :: (forall ctx'. Expr ref ctx') -> SubstResult ref ctx x

@@ -5,6 +5,7 @@ import qualified Data.Map as Map
 import Data.Functor.Const
 import Data.Inductive
 import Numeric.Natural
+import Control.Monad.State
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
@@ -74,6 +75,31 @@ freshId env (VB x) =
     []  -> TopIdGen x 0
     n:_ -> TopIdGen x (n + 1)
 
+-- NB: We assume that the VarBndrs in the list have unique names.
+-- generateTopBindings ::
+--   TopEnv ->
+--   HList VarBndr out ->
+--   HList (Const (ClosedExpr TopId)) out ->
+--   State [TopBinding] (HList (Const (ClosedExpr TopId)) out)
+-- generateTopBindings _ HNil HNil = return HNil
+-- generateTopBindings env (varBndr :& varBndrs) (Const e :& es) = do
+--   e' <- generateTopBinding env varBndr e
+--   fmap (Const e' :&) (generateTopBindings env varBndrs es)
+
+generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding] (HList (Const (ClosedExpr TopId)) out)
+generateTopBindings _ HNil = return HNil
+generateTopBindings env (Bind varBndr e :& bs) = do
+  e' <- generateTopBinding env varBndr e
+  fmap (Const e' :&) (generateTopBindings env bs)
+
+generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding] (Expr TopId '[])
+generateTopBinding env varBndr e
+  | isSmall e = return e
+  | otherwise = do
+      let x = freshId env varBndr
+      modify (TopBind x e :)
+      return (RefE x)
+
 evalstepExpr :: TopEnv -> ExprCtx -> ClosedExpr TopId -> Outcome
 evalstepExpr env ctx (PrimE primop :@ lhs :@ rhs)
   | Just f <- matchNaturalBinOp primop
@@ -102,6 +128,16 @@ evalstepExpr env ctx (LamE varBndr e1 :@ e2)
 evalstepExpr env ctx (e1 :@ e2) =
   evalstepExpr env (\e1' -> ctx (e1' :@ e2)) e1
 evalstepExpr env ctx (CaseE e bs) = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
+evalstepExpr env ctx (LetE (bs :: HList f out) e) =
+  rightIdListAppend bs $
+  let substItems :: HList (Const (ClosedExpr TopId)) out
+      genTopBindings :: State [TopBinding] (HList (Const (ClosedExpr TopId)) out)
+      topBindings :: [TopBinding]
+      subst :: Subst TopId out '[]
+      (substItems, topBindings) = runState genTopBindings []
+      genTopBindings = generateTopBindings env (hmap (substBinding subst) bs)
+      subst = mkSubst substItems
+  in Update (ctx (substExpr subst e)) topBindings
 evalstepExpr _ _ _ = Stuck
 
 evalstepCaseOfLit :: TopEnv -> ExprCtx -> Lit -> [Branch TopId '[]] -> Outcome
