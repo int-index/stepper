@@ -11,6 +11,7 @@ import Stepper.Syntax.Scoped
 
 data RnError =
     RnErrNameNotFound IText
+  | RnErrNotAValueExpr PExpr
   deriving (Show)
 
 type Renamer = Either RnError
@@ -39,7 +40,9 @@ rnExpr topIds = go
       | Set.member v topIds = return (ValE (RefV (TopIdUser v)))
       | otherwise = Left (RnErrNameNotFound v)
     go _ (PLitE lit) = return (ValE (LitV lit))
-    go _ (PConE con) = return (ValE (ConV con))
+    go ctx (PConAppE con args) = do
+      args' <- traverse (goValue ctx) args
+      return (ValE (ConAppV con args'))
     go _ (PPrimE primop) = return (ValE (PrimV primop))
     go ctx (PLamE v e) =
       rnVarBndr v \varBndr -> do
@@ -60,6 +63,13 @@ rnExpr topIds = go
         bs'' <- htraverse (rnBindingRHS topIds ctx') bs'
         e' <- go ctx' e
         return (LetE bs'' e')
+
+    goValue :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (ValueExpr TopId ctx1)
+    goValue ctx e = do
+      e' <- go ctx e
+      case e' of
+        ValE val -> Right val
+        _        -> Left (RnErrNotAValueExpr e)
 
 -- LHS renamed, RHS not yet
 type HalfRnBinding :: VarInfo -> Type
@@ -94,9 +104,9 @@ rnPat :: PPat -> (forall out. HList VarBndr out -> Pat out -> Renamer r) -> Rena
 rnPat (PVarP v) cont =
   rnVarBndr v \varBndr ->
     cont (varBndr :& HNil) (VarP varBndr)
-rnPat (PConP con vs) cont =
+rnPat (PConAppP con vs) cont =
   rnVarBndrs vs \varBndrs ->
-    cont varBndrs (ConP con varBndrs)
+    cont varBndrs (ConAppP con varBndrs)
 rnPat (PLitP lit) cont = cont HNil (LitP lit)
 rnPat PWildP cont = cont HNil WildP
 

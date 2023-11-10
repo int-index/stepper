@@ -7,11 +7,11 @@ import Data.IText
 import Stepper.BuiltIn
 
 data Lit =
-    NatL Natural
-  | IntL Integer
-  | FrcL Rational
-  | StrL Text
-  | ChrL Char
+    NatL !Natural
+  | IntL !Integer
+  | FrcL !Rational
+  | StrL !Text
+  | ChrL !Char
   deriving (Eq, Show)
 
 data PrimOp =

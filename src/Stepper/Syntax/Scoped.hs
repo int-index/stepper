@@ -13,15 +13,15 @@ type VarInfo = ()
 
 type VarBndr :: VarInfo -> Type
 data VarBndr v where
-  VB :: IText -> VarBndr '()
+  VB :: !IText -> VarBndr '()
 
 deriving instance Show (VarBndr v)
 
 type Con = IText
 
 data TopId =
-    TopIdUser IText
-  | TopIdGen IText Int
+    TopIdUser !IText
+  | TopIdGen !IText !Int
   deriving (Eq, Ord, Show)
 
 data Module = Mod [TopBinding]
@@ -44,10 +44,9 @@ type Value ref = ValueExpr ref '[]
 type ValueExpr :: Type -> [VarInfo] -> Type
 data ValueExpr ref ctx where
   RefV :: ref -> ValueExpr ref ctx
-  VarV :: Index ctx v -> ValueExpr ref ctx
+  VarV :: !(Index ctx v) -> ValueExpr ref ctx
   LitV :: Lit -> ValueExpr ref ctx
-  ConV :: Con -> ValueExpr ref ctx   -- TODO: replace with ConAppV
-                                     -- ConAppV :: Con -> [ValueExpr ref ctx] -> ValueExpr ref ctx
+  ConAppV :: Con -> [ValueExpr ref ctx] -> ValueExpr ref ctx
   PrimV :: PrimOp -> ValueExpr ref ctx
 
 deriving instance Show ref => Show (ValueExpr ref ctx)
@@ -57,7 +56,7 @@ type ClosedExpr ref = Expr ref '[]
 
 type Expr :: Type -> [VarInfo] -> Type
 data Expr ref ctx where
-  ValE :: ValueExpr ref ctx -> Expr ref ctx
+  ValE :: !(ValueExpr ref ctx) -> Expr ref ctx
   LamE :: VarBndr v -> Expr ref (v : ctx) -> Expr ref ctx
   (:@) :: Expr ref ctx -> Expr ref ctx -> Expr ref ctx
   CaseE :: Expr ref ctx -> [Branch ref ctx] -> Expr ref ctx
@@ -89,7 +88,7 @@ extendValueExprCtx e0 =
     RefV ref -> RefV ref
     VarV i -> VarV (extendIndexBase @ctx' i)
     LitV lit -> LitV lit
-    ConV con -> ConV con
+    ConAppV con args -> ConAppV con (map (extendValueExprCtx @ctx') args)
     PrimV primop -> PrimV primop
 
 type Branch :: Type -> [VarInfo] -> Type
@@ -110,7 +109,7 @@ extendBranchCtx (p :-> e) = p :-> e'
 type Pat :: [VarInfo] -> Type
 data Pat out where
   VarP :: VarBndr v -> Pat '[v]
-  ConP :: Con -> HList VarBndr out -> Pat out
+  ConAppP :: Con -> HList VarBndr out -> Pat out
   LitP :: Lit -> Pat '[]
   WildP :: Pat '[]
 
@@ -120,7 +119,7 @@ patVarBndrs :: Pat out -> HList VarBndr out
 patVarBndrs p =
   case p of
     VarP varBndr -> varBndr :& HNil
-    ConP _ varBndrs -> varBndrs
+    ConAppP _ varBndrs -> varBndrs
     LitP _ -> HNil
     WildP -> HNil
 
@@ -196,7 +195,7 @@ substValueExpr subst e0 =
         SubstI j -> VarV j
         SubstE e -> e
     LitV lit -> LitV lit
-    ConV con -> ConV con
+    ConAppV con args -> ConAppV con (map (substValueExpr subst) args)
     PrimV primop -> PrimV primop
 
 substBranch :: Subst ref ctx ctx' -> Branch ref ctx -> Branch ref ctx'

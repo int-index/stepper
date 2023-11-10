@@ -12,6 +12,7 @@ import Data.Foldable
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
+import Stepper.BuiltIn (BuiltInStrings(..), builtInStrings)
 
 evalstep :: Module -> TopId -> Maybe Module  -- Nothing <=> nothing to reduce
 evalstep (Mod bs) entryPoint = go Set.empty entryPoint
@@ -52,14 +53,18 @@ type ExprCtx = ClosedExpr TopId -> TopBinding
 
 type TopEnv = Map TopId TopBinding
 
-isWHNF :: Expr TopId ctx -> Bool
-isWHNF e =
+isValueHNF :: Value TopId -> Bool
+isValueHNF v =
+  case v of
+    RefV{}    -> False
+    LitV{}    -> True
+    ConAppV{} -> True
+    PrimV{}   -> True
+
+isExprWHNF :: ClosedExpr TopId -> Bool
+isExprWHNF e =
   case e of
-    ValE RefV{}  -> False
-    ValE VarV{}  -> True
-    ValE LitV{}  -> True
-    ValE ConV{}  -> True
-    ValE PrimV{} -> True
+    ValE v  -> isValueHNF v
     LamE{}  -> True
     _ :@ _  -> False
     CaseE{} -> False
@@ -72,16 +77,6 @@ freshId env (VB x) =
     n:_ -> TopIdGen x (n + 1)
 
 -- NB: We assume that the VarBndrs in the list have unique names.
--- generateTopBindings ::
---   TopEnv ->
---   HList VarBndr out ->
---   HList (Const (ClosedExpr TopId)) out ->
---   State [TopBinding] (HList (Const (ClosedExpr TopId)) out)
--- generateTopBindings _ HNil HNil = return HNil
--- generateTopBindings env (varBndr :& varBndrs) (Const e :& es) = do
---   e' <- generateTopBinding env varBndr e
---   fmap (Const e' :&) (generateTopBindings env varBndrs es)
-
 generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding] (HList (Const (Value TopId)) out)
 generateTopBindings _ HNil = return HNil
 generateTopBindings env (Bind varBndr e :& bs) = do
@@ -105,11 +100,16 @@ evalstepExpr env ctx (ValE (PrimV primop) :@ lhs :@ rhs)
   = evalstepIntegerBinOp ctx f lhs rhs `orIfStuck`
     evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
     evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
-evalstepExpr env ctx (CaseE (ValE (LitV lit)) bs)
-  = evalstepCaseOfLit env ctx lit bs
+  | Integer_eq <- primop
+  = evalstepIntegerEq ctx lhs rhs `orIfStuck`
+    evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
+    evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
+evalstepExpr env ctx (CaseE e bs)
+  | ValE val <- e, isValueHNF val = evalstepCaseOfVal env ctx val bs
+  | otherwise = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr env ctx (ValE (RefV ref))
   | Just (TopBind _ e) <- Map.lookup ref env
-  , isWHNF e
+  , isExprWHNF e
   = Update (ctx (extendExprCtx e)) []
   | otherwise = Jump ref
 evalstepExpr env ctx (LamE varBndr e1 :@ e2) =
@@ -118,7 +118,6 @@ evalstepExpr env ctx (LamE varBndr e1 :@ e2) =
   in Update (ctx (substExpr subst e1)) topBindings
 evalstepExpr env ctx (e1 :@ e2) =
   evalstepExpr env (\e1' -> ctx (e1' :@ e2)) e1
-evalstepExpr env ctx (CaseE e bs) = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr env ctx (LetE bs e) =
   rightIdListAppend bs $
   let (substItems, topBindings) = runState (generateTopBindings env localBindings) []
@@ -127,20 +126,29 @@ evalstepExpr env ctx (LetE bs e) =
   in Update (ctx (substExpr subst e)) topBindings
 evalstepExpr _ _ _ = Stuck
 
-evalstepCaseOfLit :: TopEnv -> ExprCtx -> Lit -> [Branch TopId '[]] -> Outcome
-evalstepCaseOfLit _ _ _ [] = Stuck
-evalstepCaseOfLit env ctx lit ((p :-> e):bs) =
+evalstepCaseOfVal :: TopEnv -> ExprCtx -> Value TopId -> [Branch TopId '[]] -> Outcome
+evalstepCaseOfVal _ _ _ [] = Stuck
+evalstepCaseOfVal env ctx val ((p :-> e):bs) =
   case p of
     VarP{} ->
-      let subst = mkSubst (Const (LitV lit) :& HNil)
+      let subst = mkSubst (Const val :& HNil)
       in Update (ctx (substExpr subst e)) []
-    ConP{} -> Stuck
-    LitP lit' ->
-      case matchLit lit lit' of
-        Nothing    -> Stuck
-        Just True  -> Update (ctx e) []
-        Just False -> evalstepCaseOfLit env ctx lit bs
+    ConAppP con varBndrs
+      | ConAppV con' args <- val
+      -> case matchCon con con' varBndrs args of
+          Just substItems ->
+            rightIdListAppend varBndrs $
+            let subst = mkSubst substItems
+            in Update (ctx (substExpr subst e)) []
+          Nothing -> evalstepCaseOfVal env ctx val bs
+    LitP lit'
+      | LitV lit <- val,
+        Just eqLit <- matchLit lit lit'
+      -> if eqLit
+         then Update (ctx e) []
+         else evalstepCaseOfVal env ctx val bs
     WildP  -> Update (ctx e) []
+    _      -> Stuck
 
 matchLit :: Lit -> Lit -> Maybe Bool
 matchLit (NatL a) (NatL b) = Just (a == b)
@@ -149,6 +157,11 @@ matchLit (FrcL a) (FrcL b) = Just (a == b)
 matchLit (StrL a) (StrL b) = Just (a == b)
 matchLit (ChrL a) (ChrL b) = Just (a == b)
 matchLit _ _ = Nothing
+
+matchCon :: Con -> Con -> HList VarBndr xs -> [Value TopId] -> Maybe (HList (Const (Value TopId)) xs)
+matchCon con con' varBndrs args
+  | con == con' = hzipWithList (\_ -> Const) varBndrs args
+  | otherwise = Nothing
 
 evalstepNaturalBinOp ::
   ExprCtx ->
@@ -171,6 +184,20 @@ evalstepIntegerBinOp ctx f lhs rhs
   | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
   = Update (ctx (ValE (LitV (IntL (f a b))))) []
   | otherwise = Stuck
+
+evalstepIntegerEq ::
+  ExprCtx ->
+  ClosedExpr TopId ->
+  ClosedExpr TopId ->
+  Outcome
+evalstepIntegerEq ctx lhs rhs
+  | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
+  = Update (ctx (ValE (primBool (a == b)))) []
+  | otherwise = Stuck
+
+primBool :: Bool -> Value TopId
+primBool True  = ConAppV builtInStrings._True  []
+primBool False = ConAppV builtInStrings._False []
 
 matchNaturalBinOp :: PrimOp -> Maybe (Natural -> Natural -> Natural)
 matchNaturalBinOp primop =
@@ -226,7 +253,7 @@ gcTopBindings root topBinds = filter isLive topBinds
       else do
         modify (Set.insert ref)
         traverse_ goExpr (getExpr ref)
+    goValueExpr (ConAppV _ args) = traverse_ goValueExpr args
     goValueExpr VarV{} = return ()
-    goValueExpr ConV{} = return ()
     goValueExpr LitV{} = return ()
     goValueExpr PrimV{} = return ()

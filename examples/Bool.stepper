@@ -1,0 +1,11 @@
+and = \a b ->
+  case a of
+    False() -> False()
+    True()  -> b
+
+or = \a b ->
+  case a of
+    False() -> b
+    True()  -> True()
+
+result = or (and (Integer.eq +0 +0) (Integer.eq +0 +1)) (Integer.eq +1 +1)

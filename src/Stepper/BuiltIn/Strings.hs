@@ -33,6 +33,8 @@ genBuiltInStrings
     "Char",
     "IO",
     "Prelude",
+    "True",
+    "False",
     "add",
     "sub",
     "mul",
