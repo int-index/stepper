@@ -105,7 +105,7 @@ evalstepExpr env ctx (ValE (PrimV primop) :@ lhs :@ rhs)
     evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
     evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
 evalstepExpr env ctx (CaseE e bs)
-  | ValE val <- e, isValueHNF val = evalstepCaseOfVal env ctx val bs
+  | ValE val <- e, isValueHNF val = evalstepCaseOfVal ctx val bs
   | otherwise = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr env ctx (ValE (RefV ref))
   | Just (TopBind _ e) <- Map.lookup ref env
@@ -126,29 +126,37 @@ evalstepExpr env ctx (LetE bs e) =
   in Update (ctx (substExpr subst e)) topBindings
 evalstepExpr _ _ _ = Stuck
 
-evalstepCaseOfVal :: TopEnv -> ExprCtx -> Value TopId -> [Branch TopId '[]] -> Outcome
-evalstepCaseOfVal _ _ _ [] = Stuck
-evalstepCaseOfVal env ctx val ((p :-> e):bs) =
-  case p of
-    VarP{} ->
-      let subst = mkSubst (Const val :& HNil)
-      in Update (ctx (substExpr subst e)) []
-    ConAppP con varBndrs
-      | ConAppV con' args <- val
-      -> case matchCon con con' varBndrs args of
-          Just substItems ->
-            rightIdListAppend varBndrs $
-            let subst = mkSubst substItems
-            in Update (ctx (substExpr subst e)) []
-          Nothing -> evalstepCaseOfVal env ctx val bs
-    LitP lit'
-      | LitV lit <- val,
-        Just eqLit <- matchLit lit lit'
-      -> if eqLit
-         then Update (ctx e) []
-         else evalstepCaseOfVal env ctx val bs
-    WildP  -> Update (ctx e) []
-    _      -> Stuck
+evalstepCaseOfVal :: ExprCtx -> Value TopId -> Branches TopId '[] -> Outcome
+evalstepCaseOfVal ctx val (Branches bs mb) = go bs
+  where
+    go [] =
+      case mb of
+        Nothing -> Stuck
+        Just (p :-> e) ->
+          case p of
+            WildP -> Update (ctx e) []
+            VarP{} ->
+              let subst = mkSubst (Const val :& HNil)
+              in Update (ctx (substExpr subst e)) []
+    go ((p :-> e):bs') =
+      case p of
+        ConAppP con varBndrs
+          | ConAppV con' args <- val
+          -> if con == con' then
+              case hzipWithList (\_ -> Const) varBndrs args of
+                  Nothing -> Stuck
+                  Just substItems ->
+                    rightIdListAppend varBndrs $
+                    let subst = mkSubst substItems
+                    in Update (ctx (substExpr subst e)) []
+            else go bs'
+        LitP lit'
+          | LitV lit <- val,
+            Just eqLit <- matchLit lit lit'
+          -> if eqLit
+            then Update (ctx e) []
+            else go bs'
+        _ -> Stuck
 
 matchLit :: Lit -> Lit -> Maybe Bool
 matchLit (NatL a) (NatL b) = Just (a == b)
@@ -157,11 +165,6 @@ matchLit (FrcL a) (FrcL b) = Just (a == b)
 matchLit (StrL a) (StrL b) = Just (a == b)
 matchLit (ChrL a) (ChrL b) = Just (a == b)
 matchLit _ _ = Nothing
-
-matchCon :: Con -> Con -> HList VarBndr xs -> [Value TopId] -> Maybe (HList (Const (Value TopId)) xs)
-matchCon con con' varBndrs args
-  | con == con' = hzipWithList (\_ -> Const) varBndrs args
-  | otherwise = Nothing
 
 evalstepNaturalBinOp ::
   ExprCtx ->
@@ -238,12 +241,16 @@ gcTopBindings root topBinds = filter isLive topBinds
       goExpr e1
       goExpr e2
     goExpr (LamE _ e) = goExpr e
-    goExpr (CaseE e bs) = do
+    goExpr (CaseE e (Branches bs mb)) = do
       goExpr e
-      traverse_ (\(_ :-> e1) -> goExpr e1) bs
+      traverse_ goBranch bs
+      traverse_ goBranch mb
     goExpr (LetE bs e) = do
       htraverse_ (goExpr . getBindingExpr) bs
       goExpr e
+
+    goBranch :: Branch TopId psort ctx -> State (Set TopId) ()
+    goBranch (_ :-> e1) = goExpr e1
 
     goValueExpr :: ValueExpr TopId ctx -> State (Set TopId) ()
     goValueExpr (RefV ref) = do

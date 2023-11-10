@@ -15,6 +15,7 @@ import Data.Inductive
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Char as Char
+import Data.Maybe
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
@@ -98,7 +99,7 @@ renderExpr prec ctx (e1 :@ e2) =
   renderExpr opPrec ctx e1 `horiz` comic14 " " `horiz` renderExpr appPrec ctx e2
 renderExpr prec ctx (CaseE e bs) =
   framedIf (prec > topPrec) $
-  (comic14 "case " `horiz` renderExpr topPrec ctx e `horiz` comic14 " of")
+  (comic14 "case " `horiz` renderExpr opPrec ctx e `horiz` comic14 " of")
     `vert` addOffset 0{x=20} (renderBranches ctx bs)
 renderExpr prec ctx (LetE bs e) =
   framedIf (prec > topPrec) $
@@ -129,10 +130,12 @@ renderBindings ctx = go
 renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding TopId ctx v -> Layout
 renderBinding ctx (Bind (VB v) e) = renderIdent v.str `horiz` comic14 " = " `horiz` renderExpr topPrec ctx e
 
-renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> [Branch TopId ctx] -> Layout
-renderBranches ctx bs = foldr1 vert (map (renderBranch ctx) bs)
+renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branches TopId ctx -> Layout
+renderBranches ctx (Branches bs mb) = foldr1 vert (bs' ++ maybeToList mb')
+  where bs' = map (renderBranch ctx) bs
+        mb' = fmap (renderBranch ctx) mb
 
-renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId ctx -> Layout
+renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId psort ctx -> Layout
 renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndr :& ctx) e
 renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
 renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e

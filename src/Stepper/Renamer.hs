@@ -5,6 +5,7 @@ import Data.IText
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Inductive
+import Data.Type.Equality
 
 import Stepper.Syntax.Parsed
 import Stepper.Syntax.Scoped
@@ -12,6 +13,7 @@ import Stepper.Syntax.Scoped
 data RnError =
     RnErrNameNotFound IText
   | RnErrNotAValueExpr PExpr
+  | RnErrBadBranchOrder
   deriving (Show)
 
 type Renamer = Either RnError
@@ -54,7 +56,7 @@ rnExpr topIds = go
       return (e1' :@ e2')
     go ctx (PCaseE e bs) = do
       e' <- go ctx e
-      bs' <- traverse (rnBranch topIds ctx) bs
+      bs' <- rnBranches topIds ctx bs
       return (CaseE e' bs')
     go ctx (PLetE bs e) =
       rnBindingsLHS bs \bs' -> do
@@ -94,13 +96,41 @@ rnBindingRHS topIds ctx (HalfRnBind varBndr e) = do
   e' <- rnExpr topIds ctx e
   return (Bind varBndr e')
 
-rnBranch :: forall ctx. Set PVar -> HList VarBndr ctx -> PBranch -> Renamer (Branch TopId ctx)
+data SomeBranch ref ctx = forall psort. SomeBranch (Branch ref psort ctx)
+
+isMatchBranch :: Branch ref psort ctx -> Maybe (psort :~: MatchPat)
+isMatchBranch (LitP{} :-> _)    = Just Refl
+isMatchBranch (ConAppP{} :-> _) = Just Refl
+isMatchBranch _ = Nothing
+
+isCatchAllBranch :: Branch ref psort ctx -> Maybe (psort :~: CatchAllPat)
+isCatchAllBranch (WildP :-> _)  = Just Refl
+isCatchAllBranch (VarP{} :-> _) = Just Refl
+isCatchAllBranch _ = Nothing
+
+rnBranches :: forall ctx. Set PVar -> HList VarBndr ctx -> [PBranch] -> Renamer (Branches TopId ctx)
+rnBranches topIds ctx bs0 = do
+    bs' <- traverse (rnBranch topIds ctx) bs0
+    goMatch [] bs'
+  where
+    goMatch, goCatchAll :: [Branch TopId MatchPat ctx] -> [SomeBranch TopId ctx] -> Renamer (Branches TopId ctx)
+    goMatch acc (SomeBranch b : bs)
+      | Just Refl <- isMatchBranch b
+      = goMatch (b : acc) bs
+    goMatch acc bs = goCatchAll (reverse acc) bs
+    goCatchAll bs [SomeBranch b]
+      | Just Refl <- isCatchAllBranch b
+      = return (Branches bs (Just b))
+    goCatchAll bs [] = return (Branches bs Nothing)
+    goCatchAll _ _ = Left RnErrBadBranchOrder
+
+rnBranch :: forall ctx. Set PVar -> HList VarBndr ctx -> PBranch -> Renamer (SomeBranch TopId ctx)
 rnBranch topIds ctx (PBr p e) =
   rnPat p \out p' -> do
     e' <- rnExpr topIds (out ++& ctx) e
-    return (p' :-> e')
+    return (SomeBranch (p' :-> e'))
 
-rnPat :: PPat -> (forall out. HList VarBndr out -> Pat out -> Renamer r) -> Renamer r
+rnPat :: PPat -> (forall psort out. HList VarBndr out -> Pat psort out -> Renamer r) -> Renamer r
 rnPat (PVarP v) cont =
   rnVarBndr v \varBndr ->
     cont (varBndr :& HNil) (VarP varBndr)

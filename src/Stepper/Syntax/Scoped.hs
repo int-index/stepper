@@ -59,7 +59,7 @@ data Expr ref ctx where
   ValE :: !(ValueExpr ref ctx) -> Expr ref ctx
   LamE :: VarBndr v -> Expr ref (v : ctx) -> Expr ref ctx
   (:@) :: Expr ref ctx -> Expr ref ctx -> Expr ref ctx
-  CaseE :: Expr ref ctx -> [Branch ref ctx] -> Expr ref ctx
+  CaseE :: Expr ref ctx -> Branches ref ctx -> Expr ref ctx
   LetE ::
     HList (Binding ref (out ++ ctx)) out ->
     Expr ref (out ++ ctx) ->
@@ -75,7 +75,7 @@ extendExprCtx e0 =
     ValE val -> ValE (extendValueExprCtx @ctx' val)
     LamE varBndr e -> LamE varBndr (extendExprCtx @ctx' e)
     e1 :@ e2 -> extendExprCtx @ctx' e1 :@ extendExprCtx @ctx' e2
-    CaseE e bs -> CaseE (extendExprCtx @ctx' e) (map (extendBranchCtx @ctx') bs)
+    CaseE e bs -> CaseE (extendExprCtx @ctx' e) (extendBranchesCtx @ctx' bs)
     LetE (bs :: HList f out) e ->
       assocListAppend @_ @ctx @ctx' bs $
       LetE
@@ -91,31 +91,47 @@ extendValueExprCtx e0 =
     ConAppV con args -> ConAppV con (map (extendValueExprCtx @ctx') args)
     PrimV primop -> PrimV primop
 
-type Branch :: Type -> [VarInfo] -> Type
-data Branch ref ctx where
-  (:->) :: Pat out -> Expr ref (out ++ ctx) -> Branch ref ctx
+type Branches :: Type -> [VarInfo] -> Type
+data Branches ref ctx =
+  Branches
+    [Branch ref MatchPat ctx]
+    (Maybe (Branch ref CatchAllPat ctx))
+
+deriving instance Show ref => Show (Branches ref ctx)
+
+type Branch :: Type -> PatSort -> [VarInfo] -> Type
+data Branch ref psort ctx where
+  (:->) :: Pat psort out -> Expr ref (out ++ ctx) -> Branch ref psort ctx
 
 infix 0 :->
 
-deriving instance Show ref => Show (Branch ref ctx)
+deriving instance Show ref => Show (Branch ref psort ctx)
 
-extendBranchCtx :: forall ctx' ref ctx. Branch ref ctx -> Branch ref (ctx ++ ctx')
+extendBranchesCtx :: forall ctx' ref ctx. Branches ref ctx -> Branches ref (ctx ++ ctx')
+extendBranchesCtx (Branches bs mb) = Branches bs' mb'
+  where
+    bs' = map (extendBranchCtx @ctx') bs
+    mb' = fmap (extendBranchCtx @ctx') mb
+
+extendBranchCtx :: forall ctx' ref psort ctx. Branch ref psort ctx -> Branch ref psort (ctx ++ ctx')
 extendBranchCtx (p :-> e) = p :-> e'
   where
     e' =
       assocListAppend @_ @ctx @ctx' (patVarBndrs p) $
       extendExprCtx @ctx' e
 
-type Pat :: [VarInfo] -> Type
-data Pat out where
-  VarP :: VarBndr v -> Pat '[v]
-  ConAppP :: Con -> HList VarBndr out -> Pat out
-  LitP :: Lit -> Pat '[]
-  WildP :: Pat '[]
+data PatSort = MatchPat | CatchAllPat
 
-deriving instance Show (Pat out)
+type Pat :: PatSort -> [VarInfo] -> Type
+data Pat psort out where
+  VarP :: VarBndr v -> Pat CatchAllPat '[v]
+  WildP :: Pat CatchAllPat '[]
+  ConAppP :: Con -> HList VarBndr out -> Pat MatchPat out
+  LitP :: Lit -> Pat MatchPat '[]
 
-patVarBndrs :: Pat out -> HList VarBndr out
+deriving instance Show (Pat psort out)
+
+patVarBndrs :: Pat psort out -> HList VarBndr out
 patVarBndrs p =
   case p of
     VarP varBndr -> varBndr :& HNil
@@ -181,7 +197,7 @@ substExpr subst e0 =
       let subst' = shiftSubst1 subst
       in LamE varBndr (substExpr subst' e)
     e1 :@ e2 -> substExpr subst e1 :@ substExpr subst e2
-    CaseE e bs -> CaseE (substExpr subst e) (map (substBranch subst) bs)
+    CaseE e bs -> CaseE (substExpr subst e) (substBranches subst bs)
     LetE bs e ->
       let subst' = shiftSubstN bs subst
       in LetE (hmap (substBinding subst') bs) (substExpr subst' e)
@@ -198,7 +214,10 @@ substValueExpr subst e0 =
     ConAppV con args -> ConAppV con (map (substValueExpr subst) args)
     PrimV primop -> PrimV primop
 
-substBranch :: Subst ref ctx ctx' -> Branch ref ctx -> Branch ref ctx'
+substBranches :: Subst ref ctx ctx' -> Branches ref ctx -> Branches ref ctx'
+substBranches subst (Branches bs mb) = Branches (map (substBranch subst) bs) (fmap (substBranch subst) mb)
+
+substBranch :: Subst ref ctx ctx' -> Branch ref psort ctx -> Branch ref psort ctx'
 substBranch subst (p :-> e) =
   let subst' = shiftSubstN (patVarBndrs p) subst
   in p :-> substExpr subst' e
