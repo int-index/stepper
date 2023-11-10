@@ -18,7 +18,7 @@ data PBranch = PBr PPat PExpr
 
 data PExpr =
     PVarE PVar
-  | PConE PCon
+  | PConAppE PCon [PExpr]
   | PLitE Lit
   | PPrimE PrimOp
   | PLamE PVar PExpr
@@ -29,7 +29,7 @@ data PExpr =
 
 data PPat =
     PVarP PVar
-  | PConP PCon [PVar]
+  | PConAppP PCon [PVar]
   | PLitP Lit
   | PWildP
   deriving (Eq, Show)

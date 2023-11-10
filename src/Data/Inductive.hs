@@ -96,3 +96,8 @@ htraverse_ f (x :& xs) = f x *> htraverse_ f xs
 hfoldMap :: Monoid m => (forall x. f x -> m) -> HList f xs -> m
 hfoldMap _ HNil = mempty
 hfoldMap f (x :& xs) = f x <> hfoldMap f xs
+
+hzipWithList :: (forall x. f x -> y -> g x) -> HList f xs -> [y] -> Maybe (HList g xs)
+hzipWithList _ HNil [] = Just HNil
+hzipWithList f (x :& xs) (y : ys) = (f x y :&) <$> hzipWithList f xs ys
+hzipWithList _ _ _ = Nothing

@@ -1,0 +1,34 @@
+fibs =
+  let fibs' = zipWith Integer.add fibs (tail fibs)
+  in Cons(+0, Cons(+1, fibs'))
+
+head = \xs ->
+  case xs of
+    Cons(a, b) -> a
+
+tail = \xs ->
+  case xs of
+    Cons(a, b) -> b
+
+zipWith = \f xs ys ->
+  case xs of
+    Nil() -> Nil()
+    Cons(x, xs') ->
+      case ys of
+        Nil() -> Nil()
+        Cons(y, ys') ->
+          case f x y of { r ->
+          let { rs = zipWith f xs' ys' }
+          in Cons(r, rs) }
+
+index = \i xs ->
+  case i of
+    0 -> head xs
+    _ ->
+      case Natural.sub i 1 of { i' ->
+      case tail xs of { xs' ->
+      index i' xs' } }
+
+result =
+  case index 11 fibs of
+    _ -> fibs

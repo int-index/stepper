@@ -1,0 +1,18 @@
+map = \f xs ->
+  case xs of
+    Nil() -> Nil()
+    Cons(head, tail) ->
+      let head' = f head
+          tail' = map f tail
+      in Cons(head', tail')
+
+foldr = \f base xs ->
+  case xs of
+    Nil() -> base
+    Cons(head, tail) -> f head (foldr f base tail)
+
+sum = foldr Integer.add +0
+
+inputlist = Cons(+1, Cons(+2, Cons(+3, Nil())))
+
+result = sum (map (\a -> Integer.mul a +2) inputlist)

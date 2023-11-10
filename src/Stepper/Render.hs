@@ -115,7 +115,7 @@ renderValueExpr _ ctx (VarV i) =
   case ctx !!& i of
     VB v -> renderIdent v.str
 renderValueExpr _ _ (LitV lit) = renderLit lit
-renderValueExpr _ _ (ConV con) = renderIdent con.str
+renderValueExpr _ ctx (ConAppV con args) = renderConAppV ctx con args
 renderValueExpr _ _ (PrimV primop) = renderPrimOp primop
 
 renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding TopId ctx) out -> Layout
@@ -133,9 +133,29 @@ renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> [Branch TopId ctx
 renderBranches ctx bs = foldr1 vert (map (renderBranch ctx) bs)
 
 renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId ctx -> Layout
+renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndr :& ctx) e
+renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
 renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
 renderBranch ctx (WildP :-> e) = comic14 "_" `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
-renderBranch _ (_ :-> _) = comic14 "todo:branch"
+
+renderConAppV :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> Con -> [ValueExpr TopId ctx] -> Layout
+renderConAppV ctx con args = renderIdent con.str `horiz` comic14 "(" `horiz` go args `horiz` comic14 ")"
+  where
+    go :: [ValueExpr TopId ctx] -> Layout
+    go [] = comic14 ""
+    go [arg] = renderValueExpr topPrec ctx arg
+    go (arg : args') = renderValueExpr topPrec ctx arg `horiz` comic14 ", " `horiz` go args'
+
+renderConAppP :: (?lctx :: LayoutCtx) => Con -> HList VarBndr out -> Layout
+renderConAppP con varBndrs = renderIdent con.str `horiz` comic14 "(" `horiz` go varBndrs `horiz` comic14 ")"
+  where
+    go :: HList VarBndr out -> Layout
+    go HNil = comic14 ""
+    go (varBndr :& HNil) = renderVarBndr varBndr
+    go (varBndr :& varBndrs') = renderVarBndr varBndr `horiz` comic14 ", " `horiz` go varBndrs'
+
+renderVarBndr :: (?lctx :: LayoutCtx) => VarBndr v -> Layout
+renderVarBndr (VB v) = renderIdent v.str
 
 renderLit :: (?lctx :: LayoutCtx) => Lit -> Layout
 renderLit (NatL lit) = comic14 (Text.pack (show lit))

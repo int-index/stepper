@@ -35,6 +35,7 @@ import qualified Data.Map as Map
 
 %token
   '='  { L _ TokenEq }
+  ','  { L _ TokenComma }
   ';'  { L _ TokenSemicolon }
   '('  { L _ TokenLPar }
   ')'  { L _ TokenRPar }
@@ -75,6 +76,14 @@ Block(b) :    -- reversed
     '{' Semis(b) '}' { $2 }
   | start_layout Semis(b) EndLayout { $2 }
 
+Commas1(a) :  -- reversed
+    Commas1(a) ',' a    { $3 : $1 }
+  | a                   { [$1] }
+
+Tuple(a) :    -- reversed
+    '(' Commas1(a) ')' { $2 }
+  | '(' ')'            { [] }
+
 EndLayout :: { () }
 EndLayout :
     end_layout { () }
@@ -111,7 +120,7 @@ Vars :
 AtomExpr :: { PExpr }
 AtomExpr :
     Var { PVarE $1 }
-  | Con { PConE $1 }
+  | Con Tuple(Expr) { PConAppE $1 (reverse $2) }
   | Lit { PLitE $1 }
   | Prim { PPrimE $1 }
   | '\\' Vars '->' Expr %shift { foldl (flip PLamE) $4 $2 }
@@ -131,10 +140,10 @@ Branch : Pat '->' Expr { PBr $1 $3 }
 
 Pat :: { PPat }
 Pat :
-    Var      { PVarP $1 }
-  | Con Vars { PConP $1 (reverse $2) }
-  | Lit      { PLitP $1 }
-  | '_'      { PWildP }
+    Var            { PVarP $1 }
+  | Con Tuple(Var) { PConAppP $1 (reverse $2) }
+  | Lit            { PLitP $1 }
+  | '_'            { PWildP }
 
 Lit :: { Lit }
 Lit :
