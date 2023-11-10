@@ -35,12 +35,12 @@ rnExpr topIds = go
   where
     go :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (Expr TopId ctx1)
     go ctx (PVarE v)
-      | Just (MkSome i) <- lookupLocal ctx v = return (VarE i)
-      | Set.member v topIds = return (RefE (TopIdUser v))
+      | Just (MkSome i) <- lookupLocal ctx v = return (ValE (VarV i))
+      | Set.member v topIds = return (ValE (RefV (TopIdUser v)))
       | otherwise = Left (RnErrNameNotFound v)
-    go _ (PConE con) = return (ConE con)
-    go _ (PLitE lit) = return (LitE lit)
-    go _ (PPrimE primop) = return (PrimE primop)
+    go _ (PLitE lit) = return (ValE (LitV lit))
+    go _ (PConE con) = return (ValE (ConV con))
+    go _ (PPrimE primop) = return (ValE (PrimV primop))
     go ctx (PLamE v e) =
       rnVarBndr v \varBndr -> do
         e' <- go (varBndr :& ctx) e

@@ -88,13 +88,7 @@ opPrec = 2
 topPrec = 0
 
 renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr TopId ctx -> Layout
-renderExpr _ _ (RefE v) = renderTopId v
-renderExpr _ ctx (VarE i) =
-  case ctx !!& i of
-    VB v -> renderIdent v.str
-renderExpr _ _ (ConE con) = renderIdent con.str
-renderExpr _ _ (LitE lit) = renderLit lit
-renderExpr _ _ (PrimE primop) = renderPrimOp primop
+renderExpr prec ctx (ValE val) = renderValueExpr prec ctx val
 renderExpr prec ctx (LamE varBndr@(VB v) e) =
   framedIf (prec > topPrec) $
   (comic14 "\\" `horiz` renderIdent v.str `horiz` comic14 " -> ")
@@ -114,6 +108,15 @@ renderExpr prec ctx (LetE bs e) =
     (comic14 "let " `horiz` renderBindings ctx' bs)
     `vert`
     (comic14 "in " `horiz` renderExpr topPrec ctx' e)
+
+renderValueExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> ValueExpr TopId ctx -> Layout
+renderValueExpr _ _ (RefV v) = renderTopId v
+renderValueExpr _ ctx (VarV i) =
+  case ctx !!& i of
+    VB v -> renderIdent v.str
+renderValueExpr _ _ (LitV lit) = renderLit lit
+renderValueExpr _ _ (ConV con) = renderIdent con.str
+renderValueExpr _ _ (PrimV primop) = renderPrimOp primop
 
 renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding TopId ctx) out -> Layout
 renderBindings ctx = go
