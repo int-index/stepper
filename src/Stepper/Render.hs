@@ -37,8 +37,9 @@ renderStep n =
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =
-  let Just layout = fill extents (map renderTopBinding bs)
-  in addOffset (-layout.topLeft) layout
+  case fill extents (map renderTopBinding bs) of
+    Nothing -> comic14 "Empty module"
+    Just layout -> addOffset (-layout.topLeft) layout
 
 fill :: (?lctx :: LayoutCtx) => Extents -> [Layout] -> Maybe Layout
 fill _ [] = Nothing

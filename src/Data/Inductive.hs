@@ -6,7 +6,6 @@ module Data.Inductive where
 import GHC.TypeNats
 import GHC.Show
 import Data.Kind
-import Control.Applicative
 
 type Some :: (a -> Type) -> Type
 data Some f where

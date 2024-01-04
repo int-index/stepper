@@ -19,7 +19,7 @@ main = do
   let (entryPoint', _) = intern entryPoint itextPool
   case command of
     CommandInteract -> runInteractiveApp srcMod entryPoint'
-    CommandSvg{outPath} -> do
+    CommandSvg{outPath = _} -> do
       hPutStrLn stderr "svg: not implemented"
       exitFailure
 

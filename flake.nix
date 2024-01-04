@@ -4,7 +4,7 @@
     { self, nixpkgs }:
     let
       system = "x86_64-linux";
-      ghc = "ghc92";
+      ghc = "ghc96";
       pkgs = nixpkgs.legacyPackages.${system};
       haskellPackages =
         pkgs.haskell.packages.${ghc}.extend(hself: hsuper: {
