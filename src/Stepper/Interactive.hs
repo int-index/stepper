@@ -21,26 +21,44 @@ import Stepper.Render.Style
 import Stepper.Render.Layout (vert)
 import Stepper.Evaluator
 
+data Stack a = Bottom a | Push Int a (Stack a)
+
+stackSize :: Stack a -> Int
+stackSize (Bottom _) = 1
+stackSize (Push n _ _) = n
+
+stackPush :: a -> Stack a -> Stack a
+stackPush a stk = Push (stackSize stk + 1) a stk
+
+stackPop :: Stack a -> Maybe (Stack a)
+stackPop (Bottom _) = Nothing
+stackPop (Push _ _ stk) = Just stk
+
+stackPeek :: Stack a -> a
+stackPeek (Bottom x) = x
+stackPeek (Push _ x _) = x
+
 data AppState =
   MkAppState {
-    step :: Int,
-    mod :: Module,
+    steps :: Stack Module,
     entryPoint :: IText
   }
 
 appStateStep :: AppState -> (AppState, Bool)
 appStateStep appState =
-  case evalstep appState.mod (TopIdUser appState.entryPoint) of
+  case evalstep (stackPeek appState.steps) (TopIdUser appState.entryPoint) of
     Nothing -> (appState, False)
-    Just mod' ->
-      (appState{
-        step = appState.step + 1,
-        mod = mod'
-      }, True)
+    Just mod' -> (appState{ steps = stackPush mod' appState.steps }, True)
+
+appStateUndo :: AppState -> (AppState, Bool)
+appStateUndo appState =
+  case stackPop appState.steps of
+    Nothing -> (appState, False)
+    Just steps' -> (appState { steps = steps' }, True)
 
 runInteractiveApp :: Module -> IText -> IO ()
 runInteractiveApp srcMod entryPoint = do
-  appStateRef <- newIORef MkAppState{step = 0, mod = srcMod, entryPoint}
+  appStateRef <- newIORef MkAppState{steps = Bottom srcMod, entryPoint}
   app <- Gtk.applicationNew (Just appId) []
   _ <- Gio.onApplicationActivate app (appActivate app appStateRef)
   _ <- Gio.applicationRun app Nothing
@@ -91,8 +109,8 @@ createDrawingArea readAppState = do
       renderBackground w h
       withLayoutCtx LCtx{style = ?style, mkTextLayout} $
         (
-          renderStep appState.step `vert`
-          renderModule (E{w = floor w, h = floor h}) appState.mod
+          renderStep (stackSize appState.steps) `vert`
+          renderModule (E{w = floor w, h = floor h}) (stackPeek appState.steps)
         ).render 0
   return drawingArea
 
@@ -103,6 +121,10 @@ createEventControllerKey appStateRef queueRedraw = do
     case keyval of
       Gdk.KEY_space -> do
         updated <- atomicModifyIORef' appStateRef appStateStep
+        when updated queueRedraw
+        return updated
+      Gdk.KEY_u -> do
+        updated <- atomicModifyIORef' appStateRef appStateUndo
         when updated queueRedraw
         return updated
       _ -> return False
