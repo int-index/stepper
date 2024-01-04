@@ -38,7 +38,7 @@ appStateStep appState =
 runInteractiveApp :: Module -> IText -> IO ()
 runInteractiveApp srcMod entryPoint = do
   appStateRef <- newIORef MkAppState{step = 0, mod = srcMod, entryPoint}
-  Just app <- Gtk.applicationNew (Just appId) []
+  app <- Gtk.applicationNew (Just appId) []
   _ <- Gio.onApplicationActivate app (appActivate app appStateRef)
   _ <- Gio.applicationRun app Nothing
   return ()
@@ -53,26 +53,20 @@ appActivate app appStateRef = do
   Gtk.setWindowDefaultHeight window 600
 
   drawingArea <- createDrawingArea (readIORef appStateRef)
-  Gtk.containerAdd window drawingArea
+  Gtk.windowSetChild window (Just drawingArea)
 
-  eventControllerKey <- Gtk.eventControllerKeyNew window
-  _ <- Gtk.onEventControllerKeyKeyPressed eventControllerKey \keyval _keycode _mods -> do
-    case keyval of
-      Gdk.KEY_space -> do
-        updated <- atomicModifyIORef' appStateRef appStateStep
-        when updated $ Gtk.widgetQueueDraw drawingArea
-        return updated
-      _ -> return False
+  eventControllerKey <- createEventControllerKey appStateRef (Gtk.widgetQueueDraw drawingArea)
+  Gtk.widgetAddController window eventControllerKey
 
-  Gtk.widgetShow drawingArea
-  Gtk.widgetShow window
+  Gtk.windowPresent window
 
 createDrawingArea :: IO AppState -> IO Gtk.DrawingArea
 createDrawingArea readAppState = do
   fontCacheRef <- newIORef emptyFontCache
   drawingArea <- Gtk.drawingAreaNew
-  _ <- Gtk.onWidgetDraw drawingArea $
-    Cairo.renderWithContext $ do
+  Gtk.drawingAreaSetDrawFunc drawingArea $
+    Just $ \_ ctx _ _ ->
+    flip Cairo.renderWithContext ctx $ do
       appState <- Cairo.liftIO readAppState
       cairoContext <- Cairo.getContext
       let mkTextLayout :: Text -> Int -> Text -> Layout
@@ -86,8 +80,19 @@ createDrawingArea readAppState = do
           renderStep appState.step `vert`
           renderModule (E{w = floor w, h = floor h}) appState.mod
         ).render 0
-      return True
   return drawingArea
+
+createEventControllerKey :: IORef AppState -> IO () -> IO Gtk.EventControllerKey
+createEventControllerKey appStateRef queueRedraw = do
+  eventControllerKey <- Gtk.eventControllerKeyNew
+  _ <- Gtk.onEventControllerKeyKeyPressed eventControllerKey \keyval _keycode _mods -> do
+    case keyval of
+      Gdk.KEY_space -> do
+        updated <- atomicModifyIORef' appStateRef appStateStep
+        when updated queueRedraw
+        return updated
+      _ -> return False
+  return eventControllerKey
 
 renderBackground :: Double -> Double -> Cairo.Render ()
 renderBackground w h = do
