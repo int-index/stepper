@@ -37,8 +37,8 @@ createFontDescription fontCacheRef fontFamily fontSize = do
 toPixels :: Int32 -> Int
 toPixels a = fromIntegral (a `div` Pango.SCALE)
 
-createTextLayout :: Color -> IORef FontCache -> Text -> Int -> Text -> Cairo.Render Layout
-createTextLayout color fontCacheRef fontFamily fontSize str = do
+createTextLayout :: IORef FontCache -> Text -> Int -> Text -> Cairo.Render (Color -> Layout)
+createTextLayout fontCacheRef fontFamily fontSize str = do
   fontCache0 <- liftIO $ readIORef fontCacheRef
   let k = (fontFamily, fontSize, str)
   case Map.lookup k fontCache0.textLayoutCache of
@@ -55,7 +55,7 @@ createTextLayout color fontCacheRef fontFamily fontSize str = do
       let extents = E{w = toPixels inkW, h = toPixels inkH}
       pangoBaseline <- Pango.layoutGetBaseline pangoLayout
       let baseline = toPixels pangoBaseline
-      let textLayout =
+      let textLayout color =
             addOffset 0{ y = -baseline } $
             L{
               topLeft = 0,
@@ -77,7 +77,7 @@ createTextLayout color fontCacheRef fontFamily fontSize str = do
 data FontCache =
   FC {
     fontDescriptionCache :: Map (Text, Int) Pango.FontDescription,
-    textLayoutCache :: Map (Text, Int, Text) Layout
+    textLayoutCache :: Map (Text, Int, Text) (Color -> Layout)
   }
 
 emptyFontCache :: FontCache

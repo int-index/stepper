@@ -16,6 +16,7 @@ data Style =
     bodyFontSize :: Int,
     backgroundColor :: Color,
     identColor :: Color,
+    localIdentColor :: Color,
     punctColor :: Color,
     borderColor :: Color,
     borderWidth :: Double

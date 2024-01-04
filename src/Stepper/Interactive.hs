@@ -55,10 +55,11 @@ appActivate app appStateRef = do
         fontFamily      = "Noto Sans",
         bodyFontSize    = 14000,
         backgroundColor = RGB 0.11 0.11 0.11,
-        identColor    = RGB 0.88 0.88 0.88,
-        punctColor    = RGB 0.60 0.60 0.60,
-        borderColor   = RGB 0.44 0.44 0.44,
-        borderWidth   = 2
+        identColor      = RGB 0.88 0.88 0.88,
+        localIdentColor = RGB 0.11 0.82 0.75,
+        punctColor      = RGB 0.60 0.60 0.60,
+        borderColor     = RGB 0.44 0.44 0.44,
+        borderWidth     = 2
       }
 
   window <- Gtk.applicationWindowNew app
@@ -83,8 +84,8 @@ createDrawingArea readAppState = do
       appState <- Cairo.liftIO readAppState
       cairoContext <- Cairo.getContext
       let mkTextLayout :: Text -> Int -> Text -> Color -> Layout
-          mkTextLayout fontFamily fontSize str color = unsafePerformIO do
-            Cairo.renderWithContext (createTextLayout color fontCacheRef fontFamily fontSize str) cairoContext
+          mkTextLayout fontFamily fontSize str = unsafePerformIO do
+            Cairo.renderWithContext (createTextLayout fontCacheRef fontFamily fontSize str) cairoContext
       (x1, y1, x2, y2) <- Cairo.clipExtents
       let (w, h) = (x2 - x1, y2 - y1)
       renderBackground w h
