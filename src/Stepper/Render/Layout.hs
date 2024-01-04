@@ -50,6 +50,9 @@ addOffset offset layout =
     render = \o -> layout.render (o + offset)
   }
 
+resetOrigin :: Layout -> Layout
+resetOrigin layout = addOffset (-layout.topLeft) layout
+
 horiz :: Layout -> Layout -> Layout
 horiz layoutLeft layoutRight = layoutLeft <> addOffset offset layoutRight
   where offset = 0 { x = layoutLeft.bottomRight.x - layoutRight.topLeft.x }

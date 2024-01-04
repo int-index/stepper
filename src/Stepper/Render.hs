@@ -42,15 +42,14 @@ punct :: (?lctx :: LayoutCtx) => Text -> Layout
 punct str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontSize str ?lctx.style.punctColor
 
 renderStep :: (?lctx :: LayoutCtx) => Int -> Layout
-renderStep n =
-  let layout = punct "Step: " `horiz` punct (Text.pack (show n))
-  in addOffset (-layout.topLeft) layout
+renderStep n = resetOrigin $ punct "Step: " `horiz` punct (Text.pack (show n))
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =
+  resetOrigin $
   case fill extents (map renderTopBinding bs) of
     Nothing -> punct "Empty module"
-    Just layout -> addOffset (-layout.topLeft) layout
+    Just layout -> layout
 
 fill :: (?lctx :: LayoutCtx) => Extents -> [Layout] -> Maybe Layout
 fill _ [] = Nothing
@@ -72,7 +71,7 @@ fill extents (item:items) =
 renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
 renderTopBinding (TopBind v e) =
   withStyle ?lctx.style $
-  padded $ framed $ padded $
+  resetOrigin $ padded $ framed $ padded $
     renderTopId v `horiz` punct " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
