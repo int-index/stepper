@@ -11,6 +11,7 @@ import qualified GI.Gio as Gio
 import qualified GI.Gdk as Gdk
 import qualified GI.Cairo.Render as Cairo
 import qualified GI.Cairo.Render.Connector as Cairo
+import qualified GI.Pango as Pango
 import Data.IORef
 import System.IO.Unsafe
 import Control.Monad
@@ -18,7 +19,7 @@ import Control.Monad
 import Stepper.Syntax.Scoped
 import Stepper.Render
 import Stepper.Render.Style
-import Stepper.Render.Layout (vert)
+import Stepper.Render.Layout
 import Stepper.Evaluator
 
 data Stack a = Bottom a | Push Int a (Stack a)
@@ -41,7 +42,8 @@ stackPeek (Push _ x _) = x
 data AppState =
   MkAppState {
     steps :: Stack Module,
-    entryPoint :: IText
+    entryPoint :: IText,
+    lastLayout :: Layout
   }
 
 appStateStep :: AppState -> (AppState, Bool)
@@ -56,9 +58,27 @@ appStateUndo appState =
     Nothing -> (appState, False)
     Just steps' -> (appState { steps = steps' }, True)
 
+appUpdateLayout :: (?style :: Style) => Pango.Context -> IORef FontCache -> Extents -> AppState -> (AppState, Layout)
+appUpdateLayout pangoContext fontCacheRef extents appState = (appState { lastLayout = layout }, layout)
+  where
+    layout :: Layout
+    layout =
+      let mkTextLayout :: Text -> Int -> Text -> Color -> Layout
+          mkTextLayout fontFamily fontSize str = unsafePerformIO do
+            createTextLayout pangoContext fontCacheRef fontFamily fontSize str
+      in
+        withLayoutCtx LCtx{style = ?style, mkTextLayout} $
+          renderStep (stackSize appState.steps) `vert`
+          renderModule extents (stackPeek appState.steps)
+
 runInteractiveApp :: Module -> IText -> IO ()
 runInteractiveApp srcMod entryPoint = do
-  appStateRef <- newIORef MkAppState{steps = Bottom srcMod, entryPoint}
+  appStateRef <- newIORef $
+    MkAppState {
+      steps = Bottom srcMod,
+      entryPoint,
+      lastLayout = L 0 0 (const (return ()))
+    }
   app <- Gtk.applicationNew (Just appId) []
   _ <- Gio.onApplicationActivate app (appActivate app appStateRef)
   _ <- Gio.applicationRun app Nothing
@@ -80,38 +100,48 @@ appActivate app appStateRef = do
         borderWidth     = 2
       }
 
+  drawingArea <- createDrawingArea (readIORef appStateRef)
+  Gtk.drawingAreaSetContentHeight drawingArea 1000
+
+  scrolledWindow <- Gtk.scrolledWindowNew
+  Gtk.scrolledWindowSetChild scrolledWindow (Just drawingArea)
+
   window <- Gtk.applicationWindowNew app
   Gtk.setWindowDefaultWidth window 800
   Gtk.setWindowDefaultHeight window 600
+  Gtk.windowSetChild window (Just scrolledWindow)
 
-  drawingArea <- createDrawingArea (readIORef appStateRef)
-  Gtk.windowSetChild window (Just drawingArea)
+  fontCacheRef <- newIORef emptyFontCache
+  let updateLayoutM :: Extents -> IO ()
+      updateLayoutM extents = do
+        pangoContext <- Gtk.widgetGetPangoContext drawingArea
+        layout <- atomicModifyIORef' appStateRef (appUpdateLayout pangoContext fontCacheRef extents)
+        Gtk.drawingAreaSetContentWidth drawingArea (fromIntegral layout.extents.w)
+        Gtk.drawingAreaSetContentHeight drawingArea (fromIntegral layout.extents.h)
+        Gtk.widgetQueueDraw drawingArea
 
-  eventControllerKey <- createEventControllerKey appStateRef (Gtk.widgetQueueDraw drawingArea)
+  Gtk.onDrawingAreaResize drawingArea $ \w h ->
+    updateLayoutM E{w = fromIntegral w, h = fromIntegral h}
+
+  eventControllerKey <- createEventControllerKey appStateRef $ do
+    w <- Gtk.drawingAreaGetContentWidth drawingArea
+    h <- Gtk.drawingAreaGetContentHeight drawingArea
+    updateLayoutM E{w = fromIntegral w, h = fromIntegral h}
   Gtk.widgetAddController window eventControllerKey
 
   Gtk.windowPresent window
 
 createDrawingArea :: (?style :: Style) => IO AppState -> IO Gtk.DrawingArea
 createDrawingArea readAppState = do
-  fontCacheRef <- newIORef emptyFontCache
   drawingArea <- Gtk.drawingAreaNew
   Gtk.drawingAreaSetDrawFunc drawingArea $
     Just $ \_ ctx _ _ ->
     flip Cairo.renderWithContext ctx $ do
       appState <- Cairo.liftIO readAppState
-      cairoContext <- Cairo.getContext
-      let mkTextLayout :: Text -> Int -> Text -> Color -> Layout
-          mkTextLayout fontFamily fontSize str = unsafePerformIO do
-            Cairo.renderWithContext (createTextLayout fontCacheRef fontFamily fontSize str) cairoContext
       (x1, y1, x2, y2) <- Cairo.clipExtents
       let (w, h) = (x2 - x1, y2 - y1)
       renderBackground w h
-      withLayoutCtx LCtx{style = ?style, mkTextLayout} $
-        (
-          renderStep (stackSize appState.steps) `vert`
-          renderModule (E{w = floor w, h = floor h}) (stackPeek appState.steps)
-        ).render 0
+      appState.lastLayout.render 0
   return drawingArea
 
 createEventControllerKey :: IORef AppState -> IO () -> IO Gtk.EventControllerKey

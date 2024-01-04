@@ -8,7 +8,6 @@ import qualified GI.Cairo.Render as Cairo
 import qualified GI.Cairo.Render.Connector as Cairo
 import qualified GI.Pango as Pango
 import qualified GI.PangoCairo as PangoCairo
-import Control.Monad.IO.Class
 import Data.IORef
 
 import Stepper.Render.Layout
@@ -37,16 +36,16 @@ createFontDescription fontCacheRef fontFamily fontSize = do
 toPixels :: Int32 -> Int
 toPixels a = fromIntegral (a `div` Pango.SCALE)
 
-createTextLayout :: IORef FontCache -> Text -> Int -> Text -> Cairo.Render (Color -> Layout)
-createTextLayout fontCacheRef fontFamily fontSize str = do
-  fontCache0 <- liftIO $ readIORef fontCacheRef
+createTextLayout :: Pango.Context -> IORef FontCache -> Text -> Int -> Text -> IO (Color -> Layout)
+createTextLayout pangoContext fontCacheRef fontFamily fontSize str = do
+  fontCache0 <- readIORef fontCacheRef
   let k = (fontFamily, fontSize, str)
   case Map.lookup k fontCache0.textLayoutCache of
     Just textLayout -> return textLayout
     Nothing -> do
-      -- liftIO $ putStrLn $ "createTextLayout: cache miss " ++ show k
-      fontDescription <- liftIO $ createFontDescription fontCacheRef fontFamily fontSize
-      pangoLayout <- Cairo.getContext >>= PangoCairo.createLayout
+      -- putStrLn $ "createTextLayout: cache miss " ++ show k
+      fontDescription <- createFontDescription fontCacheRef fontFamily fontSize
+      pangoLayout <- Pango.layoutNew pangoContext
       Pango.layoutSetText pangoLayout str (-1)
       Pango.layoutSetFontDescription pangoLayout (Just fontDescription)
       (_logicalExtents, inkExtents) <- Pango.layoutGetExtents pangoLayout
@@ -66,7 +65,7 @@ createTextLayout fontCacheRef fontFamily fontSize str = do
                 setColor color
                 PangoCairo.showLayout cairoContext pangoLayout
             }
-      liftIO $ atomicModifyIORef' fontCacheRef \fontCache1 ->
+      atomicModifyIORef' fontCacheRef \fontCache1 ->
         (
           fontCache1 { textLayoutCache =
             Map.insert k textLayout fontCache1.textLayoutCache

@@ -3,6 +3,7 @@
 module Stepper.Render (
   Layout(..),
   Extents(..),
+  FontCache,
   emptyFontCache,
   createTextLayout,
   LayoutCtx(..),
