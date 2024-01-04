@@ -26,6 +26,7 @@ executable stepper
     Stepper.Renamer
     Stepper.Render.Layout
     Stepper.Render.Font
+    Stepper.Render.Style
     Stepper.Render
     Stepper.Evaluator
   build-depends:

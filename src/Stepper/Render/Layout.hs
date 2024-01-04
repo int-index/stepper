@@ -1,7 +1,11 @@
+{-# LANGUAGE ImplicitParams #-}
+
 module Stepper.Render.Layout where
 
 import qualified GI.Cairo.Render as Cairo
 import GHC.Records
+
+import Stepper.Render.Style
 
 data Offset = O { x, y :: Int }
 
@@ -68,7 +72,7 @@ padded layout =
     render = layout.render
   }
 
-framed :: Layout -> Layout
+framed :: (?style :: Style) => Layout -> Layout
 framed layout =
   L {
     topLeft = layout.topLeft,
@@ -76,7 +80,7 @@ framed layout =
     render = \offset -> do
       let o = offset + layout.topLeft
           e = layout.extents
-          frameWidth = 1
+          frameWidth = ?style.borderWidth
       Cairo.setFillRule Cairo.FillRuleEvenOdd
       Cairo.rectangle
         (fromIntegral o.x)
@@ -88,7 +92,7 @@ framed layout =
         (fromIntegral o.y + frameWidth)
         (fromIntegral e.w - 2*frameWidth)
         (fromIntegral e.h - 2*frameWidth)
-      Cairo.setSourceRGB 0.1 0.5 0.7
+      setColor ?style.borderColor
       Cairo.fill
       layout.render offset
   }

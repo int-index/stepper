@@ -21,24 +21,32 @@ import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
 import Stepper.Render.Layout
 import Stepper.Render.Font
+import Stepper.Render.Style
 
-newtype LayoutCtx = LCtx { mkTextLayout :: Text -> Int -> Text -> Layout }
+data LayoutCtx =
+  LCtx {
+    style :: Style,
+    mkTextLayout :: Text -> Int -> Text -> Color -> Layout
+  }
 
 withLayoutCtx :: LayoutCtx -> ((?lctx :: LayoutCtx) => r) -> r
 withLayoutCtx lctx r = let ?lctx = lctx in r
 
-comic14 :: (?lctx :: LayoutCtx) => Text -> Layout
-comic14 = ?lctx.mkTextLayout "Comic Sans MS" 14000
+ident :: (?lctx :: LayoutCtx) => Text -> Layout
+ident str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontSize str ?lctx.style.identColor
+
+punct :: (?lctx :: LayoutCtx) => Text -> Layout
+punct str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontSize str ?lctx.style.punctColor
 
 renderStep :: (?lctx :: LayoutCtx) => Int -> Layout
 renderStep n =
-  let layout = comic14 "Step: " `horiz` comic14 (Text.pack (show n))
+  let layout = ident "Step: " `horiz` ident (Text.pack (show n))
   in addOffset (-layout.topLeft) layout
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =
   case fill extents (map renderTopBinding bs) of
-    Nothing -> comic14 "Empty module"
+    Nothing -> ident "Empty module"
     Just layout -> addOffset (-layout.topLeft) layout
 
 fill :: (?lctx :: LayoutCtx) => Extents -> [Layout] -> Maybe Layout
@@ -60,8 +68,9 @@ fill extents (item:items) =
 
 renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
 renderTopBinding (TopBind v e) =
+  withStyle ?lctx.style $
   padded $ framed $ padded $
-    renderTopId v `horiz` comic14 " = " `horiz` renderExpr topPrec HNil e
+    renderTopId v `horiz` punct " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
 renderTopId (TopIdUser v) = renderIdent v.str
@@ -69,18 +78,22 @@ renderTopId (TopIdGen v n) =
   renderIdent v.str `horiz` addOffset subOffset sub
   where
     subOffset = 0{y = sub.extents.h `div` 6}
-    sub = comic8 (Text.pack (show n))
-    comic8 = ?lctx.mkTextLayout "Comic Sans MS" 8000
+    sub =
+      ?lctx.mkTextLayout
+        ?lctx.style.fontFamily
+        ((?lctx.style.bodyFontSize * 3) `div` 5)
+        (Text.pack (show n))
+        ?lctx.style.identColor
 
 renderIdent :: (?lctx :: LayoutCtx) => Text -> Layout
 renderIdent v =
   if Char.isAlpha (Text.head v)
-  then comic14 v
-  else comic14 "(" `horiz` comic14 v `horiz` comic14 ")"
+  then ident v
+  else punct "(" `horiz` ident v `horiz` punct ")"
 
 type Prec = Int
 
-framedIf :: Bool -> Layout -> Layout
+framedIf :: (?style :: Style) => Bool -> Layout -> Layout
 framedIf True  = framed . padded
 framedIf False = id
 
@@ -92,24 +105,28 @@ topPrec = 0
 renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr TopId ctx -> Layout
 renderExpr prec ctx (ValE val) = renderValueExpr prec ctx val
 renderExpr prec ctx (LamE varBndr@(VB v) e) =
+  withStyle ?lctx.style $
   framedIf (prec > topPrec) $
-  (comic14 "\\" `horiz` renderIdent v.str `horiz` comic14 " -> ")
+  (punct "λ" `horiz` renderIdent v.str `horiz` punct " → ")
     `vert` renderExpr topPrec (varBndr :& ctx) e
 renderExpr prec ctx (e1 :@ e2) =
+  withStyle ?lctx.style $
   framedIf (prec >= appPrec) $
-  renderExpr opPrec ctx e1 `horiz` comic14 " " `horiz` renderExpr appPrec ctx e2
+  renderExpr opPrec ctx e1 `horiz` ident " " `horiz` renderExpr appPrec ctx e2
 renderExpr prec ctx (CaseE e bs) =
+  withStyle ?lctx.style $
   framedIf (prec > topPrec) $
-  (comic14 "case " `horiz` renderExpr opPrec ctx e `horiz` comic14 " of")
+  (punct "case " `horiz` renderExpr opPrec ctx e `horiz` punct " of")
     `vert` addOffset 0{x=20} (renderBranches ctx bs)
 renderExpr prec ctx (LetE bs e) =
+  withStyle ?lctx.style $
   framedIf (prec > topPrec) $
   let varBndrs = hmap getBindingVarBndr bs
       ctx' = varBndrs ++& ctx
   in
-    (comic14 "let " `horiz` renderBindings ctx' bs)
+    (punct "let " `horiz` renderBindings ctx' bs)
     `vert`
-    (comic14 "in " `horiz` renderExpr topPrec ctx' e)
+    (punct "in " `horiz` renderExpr topPrec ctx' e)
 
 renderValueExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> ValueExpr TopId ctx -> Layout
 renderValueExpr _ _ (RefV v) = renderTopId v
@@ -124,12 +141,12 @@ renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> H
 renderBindings ctx = go
   where
     go :: forall out1. HList (Binding TopId ctx) out1 -> Layout
-    go HNil = comic14 "{}"
+    go HNil = punct "{}"
     go (b :& HNil) = renderBinding ctx b
     go (b :& bs) = renderBinding ctx b `vert` go bs
 
 renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding TopId ctx v -> Layout
-renderBinding ctx (Bind (VB v) e) = renderIdent v.str `horiz` comic14 " = " `horiz` renderExpr topPrec ctx e
+renderBinding ctx (Bind (VB v) e) = renderIdent v.str `horiz` punct " = " `horiz` renderExpr topPrec ctx e
 
 renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branches TopId ctx -> Layout
 renderBranches ctx (Branches bs mb) = foldr1 vert (bs' ++ maybeToList mb')
@@ -137,37 +154,37 @@ renderBranches ctx (Branches bs mb) = foldr1 vert (bs' ++ maybeToList mb')
         mb' = fmap (renderBranch ctx) mb
 
 renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId psort ctx -> Layout
-renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndr :& ctx) e
-renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` comic14 " -> " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
-renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
-renderBranch ctx (WildP :-> e) = comic14 "_" `horiz` comic14 " -> " `horiz` renderExpr topPrec ctx e
+renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` punct " → " `horiz` renderExpr topPrec (varBndr :& ctx) e
+renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` punct " → " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
+renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` punct " → " `horiz` renderExpr topPrec ctx e
+renderBranch ctx (WildP :-> e) = punct "_" `horiz` punct " → " `horiz` renderExpr topPrec ctx e
 
 renderConAppV :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> Con -> [ValueExpr TopId ctx] -> Layout
-renderConAppV ctx con args = renderIdent con.str `horiz` comic14 "(" `horiz` go args `horiz` comic14 ")"
+renderConAppV ctx con args = renderIdent con.str `horiz` punct "(" `horiz` go args `horiz` punct ")"
   where
     go :: [ValueExpr TopId ctx] -> Layout
-    go [] = comic14 ""
+    go [] = ident ""
     go [arg] = renderValueExpr topPrec ctx arg
-    go (arg : args') = renderValueExpr topPrec ctx arg `horiz` comic14 ", " `horiz` go args'
+    go (arg : args') = renderValueExpr topPrec ctx arg `horiz` punct ", " `horiz` go args'
 
 renderConAppP :: (?lctx :: LayoutCtx) => Con -> HList VarBndr out -> Layout
-renderConAppP con varBndrs = renderIdent con.str `horiz` comic14 "(" `horiz` go varBndrs `horiz` comic14 ")"
+renderConAppP con varBndrs = renderIdent con.str `horiz` punct "(" `horiz` go varBndrs `horiz` punct ")"
   where
     go :: HList VarBndr out -> Layout
-    go HNil = comic14 ""
+    go HNil = ident ""
     go (varBndr :& HNil) = renderVarBndr varBndr
-    go (varBndr :& varBndrs') = renderVarBndr varBndr `horiz` comic14 ", " `horiz` go varBndrs'
+    go (varBndr :& varBndrs') = renderVarBndr varBndr `horiz` punct ", " `horiz` go varBndrs'
 
 renderVarBndr :: (?lctx :: LayoutCtx) => VarBndr v -> Layout
 renderVarBndr (VB v) = renderIdent v.str
 
 renderLit :: (?lctx :: LayoutCtx) => Lit -> Layout
-renderLit (NatL lit) = comic14 (Text.pack (show lit))
-renderLit (IntL lit) = comic14 (Text.pack (show lit))
-renderLit (FrcL lit) = comic14 (Text.pack (show lit))
-renderLit (StrL lit) = comic14 (Text.pack (show lit))
-renderLit (ChrL lit) = comic14 (Text.pack (show lit))
+renderLit (NatL lit) = ident (Text.pack (show lit))
+renderLit (IntL lit) = ident (Text.pack (show lit))
+renderLit (FrcL lit) = ident (Text.pack (show lit))
+renderLit (StrL lit) = ident (Text.pack (show lit))
+renderLit (ChrL lit) = ident (Text.pack (show lit))
 
 renderPrimOp ::  (?lctx :: LayoutCtx) => PrimOp -> Layout
-renderPrimOp primop = comic14 modname.str `horiz` comic14 "." `horiz` comic14 name.str
+renderPrimOp primop = ident modname.str `horiz` punct "." `horiz` ident name.str
   where (modname, name) = primopName primop

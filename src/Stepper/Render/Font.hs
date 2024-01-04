@@ -12,6 +12,7 @@ import Control.Monad.IO.Class
 import Data.IORef
 
 import Stepper.Render.Layout
+import Stepper.Render.Style
 
 createFontDescription :: IORef FontCache -> Text -> Int -> IO Pango.FontDescription
 createFontDescription fontCacheRef fontFamily fontSize = do
@@ -36,8 +37,8 @@ createFontDescription fontCacheRef fontFamily fontSize = do
 toPixels :: Int32 -> Int
 toPixels a = fromIntegral (a `div` Pango.SCALE)
 
-createTextLayout :: IORef FontCache -> Text -> Int -> Text -> Cairo.Render Layout
-createTextLayout fontCacheRef fontFamily fontSize str = do
+createTextLayout :: Color -> IORef FontCache -> Text -> Int -> Text -> Cairo.Render Layout
+createTextLayout color fontCacheRef fontFamily fontSize str = do
   fontCache0 <- liftIO $ readIORef fontCacheRef
   let k = (fontFamily, fontSize, str)
   case Map.lookup k fontCache0.textLayoutCache of
@@ -52,8 +53,7 @@ createTextLayout fontCacheRef fontFamily fontSize str = do
       inkW <- Pango.getRectangleWidth inkExtents
       inkH <- Pango.getRectangleHeight inkExtents
       let extents = E{w = toPixels inkW, h = toPixels inkH}
-      pangoIter <- Pango.layoutGetIter pangoLayout
-      pangoBaseline <- Pango.layoutIterGetBaseline pangoIter
+      pangoBaseline <- Pango.layoutGetBaseline pangoLayout
       let baseline = toPixels pangoBaseline
       let textLayout =
             addOffset 0{ y = -baseline } $
@@ -63,7 +63,7 @@ createTextLayout fontCacheRef fontFamily fontSize str = do
               render = \offset -> do
                 cairoContext <- Cairo.getContext
                 Cairo.moveTo (fromIntegral offset.x) (fromIntegral offset.y)
-                Cairo.setSourceRGB 1 1 0.0
+                setColor color
                 PangoCairo.showLayout cairoContext pangoLayout
             }
       liftIO $ atomicModifyIORef' fontCacheRef \fontCache1 ->

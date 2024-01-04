@@ -1,3 +1,5 @@
+{-# LANGUAGE ImplicitParams #-}
+
 module Stepper.Interactive (runInteractiveApp) where
 
 import Data.IText
@@ -15,6 +17,7 @@ import Control.Monad
 
 import Stepper.Syntax.Scoped
 import Stepper.Render
+import Stepper.Render.Style
 import Stepper.Render.Layout (vert)
 import Stepper.Evaluator
 
@@ -48,6 +51,16 @@ appId = Text.pack "int-index.stepper"
 
 appActivate :: Gtk.Application -> IORef AppState -> IO ()
 appActivate app appStateRef = do
+  let ?style = MkStyle {
+        fontFamily      = "Noto Sans",
+        bodyFontSize    = 14000,
+        backgroundColor = RGB 0.11 0.11 0.11,
+        identColor    = RGB 0.88 0.88 0.88,
+        punctColor    = RGB 0.60 0.60 0.60,
+        borderColor   = RGB 0.44 0.44 0.44,
+        borderWidth   = 2
+      }
+
   window <- Gtk.applicationWindowNew app
   Gtk.setWindowDefaultWidth window 800
   Gtk.setWindowDefaultHeight window 600
@@ -60,7 +73,7 @@ appActivate app appStateRef = do
 
   Gtk.windowPresent window
 
-createDrawingArea :: IO AppState -> IO Gtk.DrawingArea
+createDrawingArea :: (?style :: Style) => IO AppState -> IO Gtk.DrawingArea
 createDrawingArea readAppState = do
   fontCacheRef <- newIORef emptyFontCache
   drawingArea <- Gtk.drawingAreaNew
@@ -69,13 +82,13 @@ createDrawingArea readAppState = do
     flip Cairo.renderWithContext ctx $ do
       appState <- Cairo.liftIO readAppState
       cairoContext <- Cairo.getContext
-      let mkTextLayout :: Text -> Int -> Text -> Layout
-          mkTextLayout fontFamily fontSize str = unsafePerformIO do
-            Cairo.renderWithContext (createTextLayout fontCacheRef fontFamily fontSize str) cairoContext
+      let mkTextLayout :: Text -> Int -> Text -> Color -> Layout
+          mkTextLayout fontFamily fontSize str color = unsafePerformIO do
+            Cairo.renderWithContext (createTextLayout color fontCacheRef fontFamily fontSize str) cairoContext
       (x1, y1, x2, y2) <- Cairo.clipExtents
       let (w, h) = (x2 - x1, y2 - y1)
       renderBackground w h
-      withLayoutCtx LCtx{mkTextLayout} $
+      withLayoutCtx LCtx{style = ?style, mkTextLayout} $
         (
           renderStep appState.step `vert`
           renderModule (E{w = floor w, h = floor h}) appState.mod
@@ -94,8 +107,8 @@ createEventControllerKey appStateRef queueRedraw = do
       _ -> return False
   return eventControllerKey
 
-renderBackground :: Double -> Double -> Cairo.Render ()
+renderBackground :: (?style :: Style) => Double -> Double -> Cairo.Render ()
 renderBackground w h = do
   Cairo.rectangle 0 0 w h
-  Cairo.setSourceRGB 0.1 0.1 0.5
+  setColor ?style.backgroundColor
   Cairo.fill
