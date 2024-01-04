@@ -25,6 +25,16 @@ data AppState =
     entryPoint :: IText
   }
 
+appStateStep :: AppState -> (AppState, Bool)
+appStateStep appState =
+  case evalstep appState.mod (TopIdUser appState.entryPoint) of
+    Nothing -> (appState, False)
+    Just mod' ->
+      (appState{
+        step = appState.step + 1,
+        mod = mod'
+      }, True)
+
 runInteractiveApp :: Module -> IText -> IO ()
 runInteractiveApp srcMod entryPoint = do
   appStateRef <- newIORef MkAppState{step = 0, mod = srcMod, entryPoint}
@@ -42,14 +52,28 @@ appActivate app appStateRef = do
   Gtk.setWindowDefaultWidth window 800
   Gtk.setWindowDefaultHeight window 600
 
-  drawingArea <- Gtk.drawingAreaNew
+  drawingArea <- createDrawingArea (readIORef appStateRef)
   Gtk.containerAdd window drawingArea
 
-  fontCacheRef <- newIORef emptyFontCache
+  eventControllerKey <- Gtk.eventControllerKeyNew window
+  _ <- Gtk.onEventControllerKeyKeyPressed eventControllerKey \keyval _keycode _mods -> do
+    case keyval of
+      Gdk.KEY_space -> do
+        updated <- atomicModifyIORef' appStateRef appStateStep
+        when updated $ Gtk.widgetQueueDraw drawingArea
+        return updated
+      _ -> return False
 
+  Gtk.widgetShow drawingArea
+  Gtk.widgetShow window
+
+createDrawingArea :: IO AppState -> IO Gtk.DrawingArea
+createDrawingArea readAppState = do
+  fontCacheRef <- newIORef emptyFontCache
+  drawingArea <- Gtk.drawingAreaNew
   _ <- Gtk.onWidgetDraw drawingArea $
     Cairo.renderWithContext $ do
-      appState <- Cairo.liftIO $ readIORef appStateRef
+      appState <- Cairo.liftIO readAppState
       cairoContext <- Cairo.getContext
       let mkTextLayout :: Text -> Int -> Text -> Layout
           mkTextLayout fontFamily fontSize str = unsafePerformIO do
@@ -63,26 +87,7 @@ appActivate app appStateRef = do
           renderModule (E{w = floor w, h = floor h}) appState.mod
         ).render 0
       return True
-
-  _ <- Gtk.onWidgetKeyPressEvent window \eventKey -> do
-    keyval <- Gdk.getEventKeyKeyval eventKey
-    case keyval of
-      Gdk.KEY_space -> do
-        updated <-
-          atomicModifyIORef' appStateRef \appState ->
-            case evalstep appState.mod (TopIdUser appState.entryPoint) of
-              Nothing -> (appState, False)
-              Just mod' ->
-                (appState{
-                  step = appState.step + 1,
-                  mod = mod'
-                }, True)
-        when updated $ Gtk.widgetQueueDraw drawingArea
-        return updated
-      _ -> return False
-
-  Gtk.widgetShow drawingArea
-  Gtk.widgetShow window
+  return drawingArea
 
 renderBackground :: Double -> Double -> Cairo.Render ()
 renderBackground w h = do
