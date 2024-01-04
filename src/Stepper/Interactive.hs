@@ -41,11 +41,13 @@ appActivate app appStateRef = do
   window <- Gtk.applicationWindowNew app
   Gtk.setWindowDefaultWidth window 800
   Gtk.setWindowDefaultHeight window 600
-  Gtk.setWidgetAppPaintable window True
+
+  drawingArea <- Gtk.drawingAreaNew
+  Gtk.containerAdd window drawingArea
 
   fontCacheRef <- newIORef emptyFontCache
 
-  _ <- Gtk.onWidgetDraw window $
+  _ <- Gtk.onWidgetDraw drawingArea $
     Cairo.renderWithContext $ do
       appState <- Cairo.liftIO $ readIORef appStateRef
       cairoContext <- Cairo.getContext
@@ -75,10 +77,11 @@ appActivate app appStateRef = do
                   step = appState.step + 1,
                   mod = mod'
                 }, True)
-        when updated $ Gtk.widgetQueueDraw window
+        when updated $ Gtk.widgetQueueDraw drawingArea
         return updated
       _ -> return False
 
+  Gtk.widgetShow drawingArea
   Gtk.widgetShow window
 
 renderBackground :: Double -> Double -> Cairo.Render ()
