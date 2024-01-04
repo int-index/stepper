@@ -8,7 +8,7 @@ module Stepper.Render (
   createTextLayout,
   LayoutCtx(..),
   withLayoutCtx,
-  renderStep,
+  renderStats,
   renderModule,
 ) where
 
@@ -42,8 +42,10 @@ localIdent str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontS
 punct :: (?lctx :: LayoutCtx) => Text -> Layout
 punct str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontSize str ?lctx.style.punctColor
 
-renderStep :: (?lctx :: LayoutCtx) => Int -> Layout
-renderStep n = resetOrigin $ punct "Step: " `horiz` punct (Text.pack (show n))
+renderStats :: (?lctx :: LayoutCtx) => Int -> Int -> Layout
+renderStats reductions gcs = resetOrigin $
+  (punct "Reductions: " `horiz` punct (Text.pack (show reductions))) `vert`
+  (punct "GCs: " `horiz` punct (Text.pack (show gcs)))
 
 renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
 renderModule extents (Mod bs) =

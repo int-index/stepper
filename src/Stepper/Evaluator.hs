@@ -14,6 +14,12 @@ import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
 import Stepper.BuiltIn (BuiltInStrings(..), builtInStrings)
 
+gc :: Module -> TopId -> Maybe Module
+gc (Mod bs) entryPoint
+  | length bs /= length bs' = Just (Mod bs')
+  | otherwise = Nothing
+  where bs' = gcTopBindings entryPoint bs
+
 evalstep :: Module -> TopId -> Maybe Module  -- Nothing <=> nothing to reduce
 evalstep (Mod bs) entryPoint = go Set.empty entryPoint
   where
@@ -24,9 +30,8 @@ evalstep (Mod bs) entryPoint = go Set.empty entryPoint
           b <- Map.lookup name env
           case evalstepTopBinding env b of
             Stuck -> Nothing
-            Update b' bs' -> Just (Mod (gcTopBindings entryPoint (updateTopBindings b' bs' bs)))
+            Update b' bs' -> Just (Mod (updateTopBindings b' bs' bs))
             Jump name' -> go (Set.insert name visited) name'
-
 
 mkTopEnv :: [TopBinding] -> Map TopId TopBinding
 mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind name _) <- bs ]
