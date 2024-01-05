@@ -56,21 +56,31 @@ appStateStep :: AppState -> (AppState, Bool)
 appStateStep appState =
   case peek appState.steps of
     MkStep _ SGarbageMarked _ -> (appState, False)
-    MkStep stats SInert mod ->
-      case evalstep mod (TopIdUser appState.entryPoint) of
+    MkStep stats SInert mod  ->
+      case evalStart mod (TopIdUser appState.entryPoint) of
         Nothing -> (appState, False)
-        Just mod' ->
+        Just mod' -> (appState{ steps = Push (MkStep stats SEval mod') appState.steps }, True)
+    MkStep stats SEval mod ->
+      case evalStep mod of
+        EvalStuck -> (appState, False)
+        EvalPushed mod' ->
+          (appState{ steps = Push (MkStep stats SEval mod') appState.steps }, True)
+        EvalReduced mod' ->
+          let stats' = succReductions stats in
+          (appState{ steps = Push (MkStep stats' SEval mod') appState.steps }, True)
+        EvalReducedLast mod' ->
           let stats' = succReductions stats in
           (appState{ steps = Push (MkStep stats' SInert mod') appState.steps }, True)
 
 appStateGC :: AppState -> (AppState, Bool)
 appStateGC appState =
   case peek appState.steps of
+    MkStep _ SInert _ -> (appState, False)
     MkStep stats SGarbageMarked mod ->
-      let step = MkStep (succGCs stats) SInert (gcSweep mod)
+      let step = MkStep (succGCs stats) SEval (gcSweep mod)
       in (appState{ steps = Push step appState.steps }, True)
-    MkStep stats SInert mod ->
-      case gcMark mod (TopIdUser appState.entryPoint) of
+    MkStep stats SEval mod ->
+      case gcMark mod of
         Nothing -> (appState, False)
         Just mod' ->
           let step = MkStep stats SGarbageMarked mod'
@@ -125,6 +135,7 @@ appActivate app appStateRef = do
         borderColor     = RGB 0.44 0.44 0.44,
         borderColorDead = RGB 0.75 0.00 0.15,
         borderColorLive = RGB 0.15 0.60 0.15,
+        borderColorEval = RGB 0.37 0.31 0.52,
         borderWidth     = 2
       }
 

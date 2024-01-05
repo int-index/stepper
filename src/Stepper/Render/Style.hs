@@ -21,6 +21,7 @@ data Style =
     borderColor :: Color,
     borderColorLive :: Color,
     borderColorDead :: Color,
+    borderColorEval :: Color,
     borderWidth :: Double
   }
 

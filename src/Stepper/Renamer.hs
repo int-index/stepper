@@ -26,7 +26,7 @@ rnModule (PMod bs) = do
   -- TODO: check that topIds are unique
   let topIds = Set.fromList [v | PBind v _ <- bs]
   bs' <- traverse (rnBinding topIds) bs
-  return (Mod bs')
+  return (Mod bs' ())
 
 rnBinding :: Set PVar -> PBinding -> Renamer (TopBinding Inert)
 rnBinding topIds (PBind v e) = do

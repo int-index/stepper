@@ -6,6 +6,7 @@ import Data.Kind
 import Data.IText
 import Data.Inductive
 import Data.Functor.Const
+import Data.List.NonEmpty (NonEmpty)
 
 import Stepper.Syntax.Basic
 
@@ -24,11 +25,12 @@ data TopId =
   | TopIdGen !IText !Int
   deriving (Eq, Ord, Show)
 
-data Phase = Inert | GarbageMarked
+data Phase = Inert | Eval | GarbageMarked
 
 type SPhase :: Phase -> Type
 data SPhase phase where
   SInert :: SPhase Inert
+  SEval :: SPhase Eval
   SGarbageMarked :: SPhase GarbageMarked
 
 deriving instance Show (SPhase phase)
@@ -40,12 +42,20 @@ type family GarbageMark phase where
   GarbageMark GarbageMarked = MarkBit
   GarbageMark _             = ()
 
+type family EvalStack phase where
+  EvalStack Eval          = NonEmpty TopId
+  EvalStack GarbageMarked = NonEmpty TopId
+  EvalStack _    = ()
+
 type Module :: Phase -> Type
-data Module phase = Mod [TopBinding phase]
-deriving instance Show (GarbageMark phase) => Show (Module phase)
+data Module phase = Mod [TopBinding phase] (EvalStack phase)
+deriving instance (Show (GarbageMark phase), Show (EvalStack phase)) => Show (Module phase)
 
 data TopBinding phase = TopBind (GarbageMark phase) TopId (ClosedExpr TopId)
 deriving instance Show (GarbageMark phase) => Show (TopBinding phase)
+
+coerceTopBinding :: (GarbageMark phase1 ~ GarbageMark phase2) => TopBinding phase1 -> TopBinding phase2
+coerceTopBinding (TopBind garbageMark name e) = TopBind garbageMark name e
 
 getTopBindingId :: TopBinding phase -> TopId
 getTopBindingId (TopBind _ name _) = name

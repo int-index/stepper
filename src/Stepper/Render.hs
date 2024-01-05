@@ -46,14 +46,15 @@ renderStats :: (?lctx :: LayoutCtx) => SPhase phase -> Int -> Int -> Layout
 renderStats phase reductions gcs = resetOrigin $
   (punct "Phase: ") `horiz` punct (case phase of
     SInert -> "inert"
+    SEval -> "eval"
     SGarbageMarked -> "garbage marked") `vert`
   (punct "Reductions: " `horiz` punct (Text.pack (show reductions))) `vert`
   (punct "GCs: " `horiz` punct (Text.pack (show gcs)))
 
 renderModule :: (?lctx :: LayoutCtx) => SPhase phase -> Extents -> Module phase -> Layout
-renderModule phase extents (Mod bs) =
+renderModule phase extents (Mod bs stk) =
   resetOrigin $
-  case fill extents (map (renderTopBinding phase) bs) of
+  case fill extents (map (renderTopBinding phase stk) bs) of
     Nothing -> punct "Empty module"
     Just layout -> layout
 
@@ -74,11 +75,11 @@ fill extents (item:items) =
         xPos' = rowLayout'.bottomRight.x
         rowLayout' = rowLayout `horiz` rowItem
 
-renderTopBinding :: (?lctx :: LayoutCtx) => SPhase phase -> TopBinding phase -> Layout
-renderTopBinding phase (TopBind garbageMark v e) =
+renderTopBinding :: (?lctx :: LayoutCtx) => SPhase phase -> EvalStack phase -> TopBinding phase -> Layout
+renderTopBinding phase stk (TopBind garbageMark name e) =
   withStyle ?lctx.style $
-  resetOrigin $ padded $ framedTopBinding phase garbageMark $ padded $
-    renderTopId v `horiz` punct " = " `horiz` renderExpr topPrec HNil e
+  resetOrigin $ padded $ framedTopBinding phase stk garbageMark name $ padded $
+    renderTopId name `horiz` punct " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
 renderTopId (TopIdUser v) = renderPrefix ident v.str
@@ -101,12 +102,15 @@ renderPrefix f v =
 
 type Prec = Int
 
-framedTopBinding :: (?style :: Style) => SPhase phase -> GarbageMark phase -> Layout -> Layout
-framedTopBinding SInert _ = framed ?style.borderWidth ?style.borderColor . padded
-framedTopBinding SGarbageMarked markBit = framed ?style.borderWidth color . padded
-  where color = case markBit of
-          Dead -> ?style.borderColorDead
-          Live -> ?style.borderColorLive
+framedTopBinding :: (?style :: Style) => SPhase phase -> EvalStack phase -> GarbageMark phase -> TopId -> Layout -> Layout
+framedTopBinding SInert _ _ _  = framed ?style.borderWidth ?style.borderColor . padded
+framedTopBinding SEval stk _ name = framed ?style.borderWidth color . padded
+  where color | elem name stk = ?style.borderColorEval
+              | otherwise     = ?style.borderColor
+framedTopBinding SGarbageMarked stk markBit name = framed ?style.borderWidth color . padded
+  where color | elem name stk   = ?style.borderColorEval
+              | Dead <- markBit = ?style.borderColorDead
+              | Live <- markBit = ?style.borderColorLive
 
 framedIf :: (?style :: Style) => Bool -> Layout -> Layout
 framedIf True  = framed ?style.borderWidth ?style.borderColor . padded
