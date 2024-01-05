@@ -36,34 +36,34 @@ evalstep (Mod bs) entryPoint = go Set.empty entryPoint
     go visited name
       | Set.member name visited = Nothing
       | otherwise = do
-          b <- Map.lookup name env
-          case evalstepTopBinding env b of
+          TopBind _ _ e <- Map.lookup name env
+          case evalstepExpr env e of
             Stuck -> Nothing
-            Update b' bs' -> Just (Mod (updateTopBindings b' bs' bs))
+            Update e' bs' -> Just (Mod (updateTopBinding name e' bs ++ bs'))
             Jump name' -> go (Set.insert name visited) name'
 
 mkTopEnv :: [TopBinding Inert] -> Map TopId (TopBinding Inert)
 mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind _ name _) <- bs ]
 
-updateTopBindings :: TopBinding Inert -> [TopBinding Inert] -> [TopBinding Inert] -> [TopBinding Inert]
-updateTopBindings _ _ [] = []
-updateTopBindings b@(TopBind _ name _) newBindings (b'@(TopBind _ name' _) : bs)
-  | name == name' = b : newBindings ++ bs
-  | otherwise = b' : updateTopBindings b newBindings bs
+updateTopBinding :: TopId -> ClosedExpr TopId -> [TopBinding Inert] -> [TopBinding Inert]
+updateTopBinding _ _ [] = []
+updateTopBinding name e (b'@(TopBind _ name' _) : bs)
+  | name == name' = TopBind () name e : bs
+  | otherwise = b' : updateTopBinding name e bs
 
 data Outcome =
     Stuck
-  | Update (TopBinding Inert) [TopBinding Inert]
+  | Update (ClosedExpr TopId) [TopBinding Inert]
   | Jump TopId
+
+mapOutcomeExpr :: (ClosedExpr TopId -> ClosedExpr TopId) -> Outcome -> Outcome
+mapOutcomeExpr _ outcome@Stuck{} = outcome
+mapOutcomeExpr _ outcome@Jump{}  = outcome
+mapOutcomeExpr f (Update e bs) = Update (f e) bs
 
 orIfStuck :: Outcome -> Outcome -> Outcome
 Stuck `orIfStuck` r = r
 r `orIfStuck` _ = r
-
-evalstepTopBinding :: TopEnv -> TopBinding Inert -> Outcome
-evalstepTopBinding env (TopBind _ name e) = evalstepExpr env (TopBind () name) e
-
-type ExprCtx = ClosedExpr TopId -> TopBinding Inert
 
 type TopEnv = Map TopId (TopBinding Inert)
 
@@ -104,54 +104,54 @@ generateTopBinding env varBndr e = do
   modify (TopBind () x e :)
   return (RefV x)
 
-evalstepExpr :: TopEnv -> ExprCtx -> ClosedExpr TopId -> Outcome
-evalstepExpr env ctx (ValE (PrimV primop) :@ lhs :@ rhs)
+evalstepExpr :: TopEnv -> ClosedExpr TopId -> Outcome
+evalstepExpr env (ValE (PrimV primop) :@ lhs :@ rhs)
   | Just f <- matchNaturalBinOp primop
-  = evalstepNaturalBinOp ctx f lhs rhs `orIfStuck`
-    evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
-    evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
+  = evalstepNaturalBinOp f lhs rhs `orIfStuck`
+    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
   | Just f <- matchIntegerBinOp primop
-  = evalstepIntegerBinOp ctx f lhs rhs `orIfStuck`
-    evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
-    evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
+  = evalstepIntegerBinOp f lhs rhs `orIfStuck`
+    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
   | Integer_eq <- primop
-  = evalstepIntegerEq ctx lhs rhs `orIfStuck`
-    evalstepExpr env (\lhs' -> ctx (ValE (PrimV primop) :@ lhs' :@ rhs)) lhs `orIfStuck`
-    evalstepExpr env (\rhs' -> ctx (ValE (PrimV primop) :@ lhs :@ rhs')) rhs
-evalstepExpr env ctx (CaseE e bs)
-  | ValE val <- e, isValueHNF val = evalstepCaseOfVal ctx val bs
-  | otherwise = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
-evalstepExpr env ctx (ValE (RefV ref))
+  = evalstepIntegerEq lhs rhs `orIfStuck`
+    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
+evalstepExpr env (CaseE e bs)
+  | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
+  | otherwise = mapOutcomeExpr (\e' -> CaseE e' bs) (evalstepExpr env e)
+evalstepExpr env (ValE (RefV ref))
   | Just (TopBind _ _ e) <- Map.lookup ref env
   , isExprWHNF e
-  = Update (ctx (extendExprCtx e)) []
+  = Update (extendExprCtx e) []
   | otherwise = Jump ref
-evalstepExpr env ctx (LamE varBndr e1 :@ e2) =
+evalstepExpr env (LamE varBndr e1 :@ e2) =
   let (substItem, topBindings) = runState (generateTopBinding env varBndr e2) []
       subst = mkSubst (Const substItem :& HNil)
-  in Update (ctx (substExpr subst e1)) topBindings
-evalstepExpr env ctx (e1 :@ e2) =
-  evalstepExpr env (\e1' -> ctx (e1' :@ e2)) e1
-evalstepExpr env ctx (LetE bs e) =
+  in Update (substExpr subst e1) topBindings
+evalstepExpr env (e1 :@ e2) =
+  mapOutcomeExpr (\e1' -> e1' :@ e2) (evalstepExpr env e1)
+evalstepExpr env (LetE bs e) =
   rightIdListAppend bs $
   let (substItems, topBindings) = runState (generateTopBindings env localBindings) []
       localBindings = hmap (substBinding subst) bs
       subst = mkSubst substItems
-  in Update (ctx (substExpr subst e)) topBindings
-evalstepExpr _ _ _ = Stuck
+  in Update (substExpr subst e) topBindings
+evalstepExpr _ _ = Stuck
 
-evalstepCaseOfVal :: ExprCtx -> Value TopId -> Branches TopId '[] -> Outcome
-evalstepCaseOfVal ctx val (Branches bs mb) = go bs
+evalstepCaseOfVal :: Value TopId -> Branches TopId '[] -> Outcome
+evalstepCaseOfVal val (Branches bs mb) = go bs
   where
     go [] =
       case mb of
         Nothing -> Stuck
         Just (p :-> e) ->
           case p of
-            WildP -> Update (ctx e) []
+            WildP -> Update e []
             VarP{} ->
               let subst = mkSubst (Const val :& HNil)
-              in Update (ctx (substExpr subst e)) []
+              in Update (substExpr subst e) []
     go ((p :-> e):bs') =
       case p of
         ConAppP con varBndrs
@@ -162,13 +162,13 @@ evalstepCaseOfVal ctx val (Branches bs mb) = go bs
                   Just substItems ->
                     rightIdListAppend varBndrs $
                     let subst = mkSubst substItems
-                    in Update (ctx (substExpr subst e)) []
+                    in Update (substExpr subst e) []
             else go bs'
         LitP lit'
           | LitV lit <- val,
             Just eqLit <- matchLit lit lit'
           -> if eqLit
-            then Update (ctx e) []
+            then Update e []
             else go bs'
         _ -> Stuck
 
@@ -181,35 +181,32 @@ matchLit (ChrL a) (ChrL b) = Just (a == b)
 matchLit _ _ = Nothing
 
 evalstepNaturalBinOp ::
-  ExprCtx ->
   (Natural -> Natural -> Natural) ->
   ClosedExpr TopId ->
   ClosedExpr TopId ->
   Outcome
-evalstepNaturalBinOp ctx f lhs rhs
+evalstepNaturalBinOp f lhs rhs
   | ValE (LitV (NatL a)) <- lhs, ValE (LitV (NatL b)) <- rhs
-  = Update (ctx (ValE (LitV (NatL (f a b))))) []
+  = Update (ValE (LitV (NatL (f a b)))) []
   | otherwise = Stuck
 
 evalstepIntegerBinOp ::
-  ExprCtx ->
   (Integer -> Integer -> Integer) ->
   ClosedExpr TopId ->
   ClosedExpr TopId ->
   Outcome
-evalstepIntegerBinOp ctx f lhs rhs
+evalstepIntegerBinOp f lhs rhs
   | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
-  = Update (ctx (ValE (LitV (IntL (f a b))))) []
+  = Update (ValE (LitV (IntL (f a b)))) []
   | otherwise = Stuck
 
 evalstepIntegerEq ::
-  ExprCtx ->
   ClosedExpr TopId ->
   ClosedExpr TopId ->
   Outcome
-evalstepIntegerEq ctx lhs rhs
+evalstepIntegerEq lhs rhs
   | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
-  = Update (ctx (ValE (primBool (a == b)))) []
+  = Update (ValE (primBool (a == b))) []
   | otherwise = Stuck
 
 primBool :: Bool -> Value TopId
