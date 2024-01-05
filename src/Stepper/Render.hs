@@ -42,15 +42,18 @@ localIdent str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontS
 punct :: (?lctx :: LayoutCtx) => Text -> Layout
 punct str = ?lctx.mkTextLayout ?lctx.style.fontFamily ?lctx.style.bodyFontSize str ?lctx.style.punctColor
 
-renderStats :: (?lctx :: LayoutCtx) => Int -> Int -> Layout
-renderStats reductions gcs = resetOrigin $
+renderStats :: (?lctx :: LayoutCtx) => SPhase phase -> Int -> Int -> Layout
+renderStats phase reductions gcs = resetOrigin $
+  (punct "Phase: ") `horiz` punct (case phase of
+    SInert -> "inert"
+    SGarbageMarked -> "garbage marked") `vert`
   (punct "Reductions: " `horiz` punct (Text.pack (show reductions))) `vert`
   (punct "GCs: " `horiz` punct (Text.pack (show gcs)))
 
-renderModule :: (?lctx :: LayoutCtx) => Extents -> Module -> Layout
-renderModule extents (Mod bs) =
+renderModule :: (?lctx :: LayoutCtx) => SPhase phase -> Extents -> Module phase -> Layout
+renderModule phase extents (Mod bs) =
   resetOrigin $
-  case fill extents (map renderTopBinding bs) of
+  case fill extents (map (renderTopBinding phase) bs) of
     Nothing -> punct "Empty module"
     Just layout -> layout
 
@@ -71,10 +74,10 @@ fill extents (item:items) =
         xPos' = rowLayout'.bottomRight.x
         rowLayout' = rowLayout `horiz` rowItem
 
-renderTopBinding :: (?lctx :: LayoutCtx) => TopBinding -> Layout
-renderTopBinding (TopBind v e) =
+renderTopBinding :: (?lctx :: LayoutCtx) => SPhase phase -> TopBinding phase -> Layout
+renderTopBinding phase (TopBind garbageMark v e) =
   withStyle ?lctx.style $
-  resetOrigin $ padded $ framed $ padded $
+  resetOrigin $ padded $ framedTopBinding phase garbageMark $ padded $
     renderTopId v `horiz` punct " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
@@ -98,8 +101,15 @@ renderPrefix f v =
 
 type Prec = Int
 
+framedTopBinding :: (?style :: Style) => SPhase phase -> GarbageMark phase -> Layout -> Layout
+framedTopBinding SInert _ = framed ?style.borderWidth ?style.borderColor . padded
+framedTopBinding SGarbageMarked markBit = framed ?style.borderWidth color . padded
+  where color = case markBit of
+          Dead -> ?style.borderColorDead
+          Live -> ?style.borderColorLive
+
 framedIf :: (?style :: Style) => Bool -> Layout -> Layout
-framedIf True  = framed . padded
+framedIf True  = framed ?style.borderWidth ?style.borderColor . padded
 framedIf False = id
 
 topPrec, opPrec, appPrec :: Prec

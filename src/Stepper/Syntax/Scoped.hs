@@ -24,17 +24,34 @@ data TopId =
   | TopIdGen !IText !Int
   deriving (Eq, Ord, Show)
 
-data Module = Mod [TopBinding]
+data Phase = Inert | GarbageMarked
+
+type SPhase :: Phase -> Type
+data SPhase phase where
+  SInert :: SPhase Inert
+  SGarbageMarked :: SPhase GarbageMarked
+
+deriving instance Show (SPhase phase)
+
+data MarkBit = Dead | Live
   deriving Show
 
-data TopBinding = TopBind TopId (ClosedExpr TopId)
-  deriving Show
+type family GarbageMark phase where
+  GarbageMark GarbageMarked = MarkBit
+  GarbageMark _             = ()
 
-getTopBindingId :: TopBinding -> TopId
-getTopBindingId (TopBind name _) = name
+type Module :: Phase -> Type
+data Module phase = Mod [TopBinding phase]
+deriving instance Show (GarbageMark phase) => Show (Module phase)
 
-getTopBindingExpr :: TopBinding -> ClosedExpr TopId
-getTopBindingExpr (TopBind _ e) = e
+data TopBinding phase = TopBind (GarbageMark phase) TopId (ClosedExpr TopId)
+deriving instance Show (GarbageMark phase) => Show (TopBinding phase)
+
+getTopBindingId :: TopBinding phase -> TopId
+getTopBindingId (TopBind _ name _) = name
+
+getTopBindingExpr :: TopBinding phase -> ClosedExpr TopId
+getTopBindingExpr (TopBind _ _ e) = e
 
 type Value :: Type -> Type
 type Value ref = ValueExpr ref '[]

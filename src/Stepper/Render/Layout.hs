@@ -75,15 +75,14 @@ padded layout =
     render = layout.render
   }
 
-framed :: (?style :: Style) => Layout -> Layout
-framed layout =
+framed :: Double -> Color -> Layout -> Layout
+framed frameWidth frameColor layout =
   L {
     topLeft = layout.topLeft,
     bottomRight = layout.bottomRight,
     render = \offset -> do
       let o = offset + layout.topLeft
           e = layout.extents
-          frameWidth = ?style.borderWidth
       Cairo.setFillRule Cairo.FillRuleEvenOdd
       Cairo.rectangle
         (fromIntegral o.x)
@@ -95,7 +94,7 @@ framed layout =
         (fromIntegral o.y + frameWidth)
         (fromIntegral e.w - 2*frameWidth)
         (fromIntegral e.h - 2*frameWidth)
-      setColor ?style.borderColor
+      setColor frameColor
       Cairo.fill
       layout.render offset
   }

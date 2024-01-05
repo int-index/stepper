@@ -23,7 +23,7 @@ main = do
       hPutStrLn stderr "svg: not implemented"
       exitFailure
 
-readSourceFile :: FilePath -> IO (Module, ITextPool)
+readSourceFile :: FilePath -> IO (Module Inert, ITextPool)
 readSourceFile srcPath = do
   srcBytes <-
     ByteString.readFile srcPath `catch` \(e :: IOException) -> do

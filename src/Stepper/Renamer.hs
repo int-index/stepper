@@ -18,20 +18,20 @@ data RnError =
 
 type Renamer = Either RnError
 
-renameModule :: PModule -> Either RnError Module
+renameModule :: PModule -> Either RnError (Module Inert)
 renameModule = rnModule
 
-rnModule :: PModule -> Renamer Module
+rnModule :: PModule -> Renamer (Module Inert)
 rnModule (PMod bs) = do
   -- TODO: check that topIds are unique
   let topIds = Set.fromList [v | PBind v _ <- bs]
   bs' <- traverse (rnBinding topIds) bs
   return (Mod bs')
 
-rnBinding :: Set PVar -> PBinding -> Renamer TopBinding
+rnBinding :: Set PVar -> PBinding -> Renamer (TopBinding Inert)
 rnBinding topIds (PBind v e) = do
   e' <- rnExpr topIds HNil e
-  return (TopBind (TopIdUser v) e')
+  return (TopBind () (TopIdUser v) e')
 
 rnExpr :: forall ctx. Set PVar -> HList VarBndr ctx -> PExpr -> Renamer (Expr TopId ctx)
 rnExpr topIds = go

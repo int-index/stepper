@@ -42,30 +42,39 @@ succReductions stats = stats { reductions = stats.reductions + 1 }
 succGCs :: Stats -> Stats
 succGCs stats = stats { gcs = stats.gcs + 1 }
 
+data Step where
+  MkStep :: Stats -> SPhase phase -> Module phase -> Step
+
 data AppState =
   MkAppState {
-    steps :: Stack (Stats, Module),
+    steps :: Stack Step,
     entryPoint :: IText,
     lastLayout :: Layout
   }
 
 appStateStep :: AppState -> (AppState, Bool)
 appStateStep appState =
-  let (stats, mod) = peek appState.steps in
-  case evalstep mod (TopIdUser appState.entryPoint) of
-    Nothing -> (appState, False)
-    Just mod' ->
-      let stats' = succReductions stats in
-      (appState{ steps = Push (stats', mod') appState.steps }, True)
+  case peek appState.steps of
+    MkStep _ SGarbageMarked _ -> (appState, False)
+    MkStep stats SInert mod ->
+      case evalstep mod (TopIdUser appState.entryPoint) of
+        Nothing -> (appState, False)
+        Just mod' ->
+          let stats' = succReductions stats in
+          (appState{ steps = Push (MkStep stats' SInert mod') appState.steps }, True)
 
 appStateGC :: AppState -> (AppState, Bool)
 appStateGC appState =
-  let (stats, mod) = peek appState.steps in
-  case gc mod (TopIdUser appState.entryPoint) of
-    Nothing -> (appState, False)
-    Just mod' ->
-      let stats' = succGCs stats in
-      (appState{ steps = Push (stats', mod') appState.steps }, True)
+  case peek appState.steps of
+    MkStep stats SGarbageMarked mod ->
+      let step = MkStep (succGCs stats) SInert (gcSweep mod)
+      in (appState{ steps = Push step appState.steps }, True)
+    MkStep stats SInert mod ->
+      case gcMark mod (TopIdUser appState.entryPoint) of
+        Nothing -> (appState, False)
+        Just mod' ->
+          let step = MkStep stats SGarbageMarked mod'
+          in (appState{ steps = Push step appState.steps }, True)
 
 appStateUndo :: AppState -> (AppState, Bool)
 appStateUndo appState =
@@ -83,15 +92,16 @@ appUpdateLayout pangoContext fontCacheRef extents appState = (appState { lastLay
             createTextLayout pangoContext fontCacheRef fontFamily fontSize str
       in
         withLayoutCtx LCtx{style = ?style, mkTextLayout} $
-          let (stats, mod) = peek appState.steps in
-          renderStats stats.reductions stats.gcs `vert`
-          renderModule extents mod
+          case peek appState.steps of
+            MkStep stats phase mod ->
+              renderStats phase stats.reductions stats.gcs `vert`
+              renderModule phase extents mod
 
-runInteractiveApp :: Module -> IText -> IO ()
+runInteractiveApp :: Module Inert -> IText -> IO ()
 runInteractiveApp srcMod entryPoint = do
   appStateRef <- newIORef $
     MkAppState {
-      steps = Bottom (MkStats 0 0, srcMod),
+      steps = Bottom (MkStep (MkStats 0 0) SInert srcMod),
       entryPoint,
       lastLayout = L 0 0 (const (return ()))
     }
@@ -113,6 +123,8 @@ appActivate app appStateRef = do
         localIdentColor = RGB 0.11 0.82 0.75,
         punctColor      = RGB 0.60 0.60 0.60,
         borderColor     = RGB 0.44 0.44 0.44,
+        borderColorDead = RGB 0.75 0.00 0.15,
+        borderColorLive = RGB 0.15 0.60 0.15,
         borderWidth     = 2
       }
 

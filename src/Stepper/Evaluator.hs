@@ -7,20 +7,29 @@ import qualified Data.Set as Set
 import Data.Functor.Const
 import Data.Inductive
 import Numeric.Natural
+import Control.Monad
 import Control.Monad.State
 import Data.Foldable
+import Data.Maybe
 
 import Stepper.Syntax.Basic
 import Stepper.Syntax.Scoped
 import Stepper.BuiltIn (BuiltInStrings(..), builtInStrings)
 
-gc :: Module -> TopId -> Maybe Module
-gc (Mod bs) entryPoint
-  | length bs /= length bs' = Just (Mod bs')
-  | otherwise = Nothing
-  where bs' = gcTopBindings entryPoint bs
+gcMark :: Module Inert -> TopId -> Maybe (Module GarbageMarked)
+gcMark (Mod bs) entryPoint =
+  do
+    let bs' = gcMarkTopBindings entryPoint bs
+    guard (any isDead bs')
+    Just (Mod bs')
+  where
+    isDead (TopBind Dead _ _) = True
+    isDead _ = False
 
-evalstep :: Module -> TopId -> Maybe Module  -- Nothing <=> nothing to reduce
+gcSweep :: Module GarbageMarked -> Module Inert
+gcSweep (Mod bs) = Mod (gcSweepTopBindings bs)
+
+evalstep :: Module Inert -> TopId -> Maybe (Module Inert)  -- Nothing <=> nothing to reduce
 evalstep (Mod bs) entryPoint = go Set.empty entryPoint
   where
     env = mkTopEnv bs
@@ -33,30 +42,30 @@ evalstep (Mod bs) entryPoint = go Set.empty entryPoint
             Update b' bs' -> Just (Mod (updateTopBindings b' bs' bs))
             Jump name' -> go (Set.insert name visited) name'
 
-mkTopEnv :: [TopBinding] -> Map TopId TopBinding
-mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind name _) <- bs ]
+mkTopEnv :: [TopBinding Inert] -> Map TopId (TopBinding Inert)
+mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind _ name _) <- bs ]
 
-updateTopBindings :: TopBinding -> [TopBinding] -> [TopBinding] -> [TopBinding]
+updateTopBindings :: TopBinding Inert -> [TopBinding Inert] -> [TopBinding Inert] -> [TopBinding Inert]
 updateTopBindings _ _ [] = []
-updateTopBindings b@(TopBind name _) newBindings (b'@(TopBind name' _) : bs)
+updateTopBindings b@(TopBind _ name _) newBindings (b'@(TopBind _ name' _) : bs)
   | name == name' = b : newBindings ++ bs
   | otherwise = b' : updateTopBindings b newBindings bs
 
 data Outcome =
     Stuck
-  | Update TopBinding [TopBinding]
+  | Update (TopBinding Inert) [TopBinding Inert]
   | Jump TopId
 
 orIfStuck :: Outcome -> Outcome -> Outcome
 Stuck `orIfStuck` r = r
 r `orIfStuck` _ = r
 
-evalstepTopBinding :: TopEnv -> TopBinding -> Outcome
-evalstepTopBinding env (TopBind name e) = evalstepExpr env (TopBind name) e
+evalstepTopBinding :: TopEnv -> TopBinding Inert -> Outcome
+evalstepTopBinding env (TopBind _ name e) = evalstepExpr env (TopBind () name) e
 
-type ExprCtx = ClosedExpr TopId -> TopBinding
+type ExprCtx = ClosedExpr TopId -> TopBinding Inert
 
-type TopEnv = Map TopId TopBinding
+type TopEnv = Map TopId (TopBinding Inert)
 
 isValueHNF :: Value TopId -> Bool
 isValueHNF v =
@@ -82,17 +91,17 @@ freshId env (VB x) =
     n:_ -> TopIdGen x (n + 1)
 
 -- NB: We assume that the VarBndrs in the list have unique names.
-generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding] (HList (Const (Value TopId)) out)
+generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding Inert] (HList (Const (Value TopId)) out)
 generateTopBindings _ HNil = return HNil
 generateTopBindings env (Bind varBndr e :& bs) = do
   e' <- generateTopBinding env varBndr e
   fmap (Const e' :&) (generateTopBindings env bs)
 
-generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding] (Value TopId)
+generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding Inert] (Value TopId)
 generateTopBinding _ _ (ValE val) = return val
 generateTopBinding env varBndr e = do
   let x = freshId env varBndr
-  modify (TopBind x e :)
+  modify (TopBind () x e :)
   return (RefV x)
 
 evalstepExpr :: TopEnv -> ExprCtx -> ClosedExpr TopId -> Outcome
@@ -113,7 +122,7 @@ evalstepExpr env ctx (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal ctx val bs
   | otherwise = evalstepExpr env (\e' -> ctx (CaseE e' bs)) e
 evalstepExpr env ctx (ValE (RefV ref))
-  | Just (TopBind _ e) <- Map.lookup ref env
+  | Just (TopBind _ _ e) <- Map.lookup ref env
   , isExprWHNF e
   = Update (ctx (extendExprCtx e)) []
   | otherwise = Jump ref
@@ -225,17 +234,29 @@ matchIntegerBinOp primop =
     Integer_div -> Just div
     _ -> Nothing
 
-gcTopBindings :: TopId -> [TopBinding] -> [TopBinding]
-gcTopBindings root topBinds = filter isLive topBinds
+gcSweepTopBindings :: [TopBinding GarbageMarked] -> [TopBinding Inert]
+gcSweepTopBindings = mapMaybe sweep
   where
+    sweep :: TopBinding GarbageMarked -> Maybe (TopBinding Inert)
+    sweep (TopBind Live name e) = Just $ TopBind () name e
+    sweep (TopBind Dead _ _) = Nothing
+
+gcMarkTopBindings :: TopId -> [TopBinding Inert] -> [TopBinding GarbageMarked]
+gcMarkTopBindings root topBinds = map mark topBinds
+  where
+    mark :: TopBinding Inert -> TopBinding GarbageMarked
+    mark (TopBind _ name e) = TopBind (isLive name) name e
+
     env = mkTopEnv topBinds
     liveSet =
       case getExpr root of
         Nothing -> Set.empty
         Just e -> execState (goExpr e) (Set.singleton root)
 
-    isLive :: TopBinding -> Bool
-    isLive b = Set.member (getTopBindingId b) liveSet
+    isLive :: TopId -> MarkBit
+    isLive name
+      | Set.member name liveSet = Live
+      | otherwise = Dead
 
     getExpr :: TopId -> Maybe (ClosedExpr TopId)
     getExpr name = fmap getTopBindingExpr (Map.lookup name env)
@@ -269,3 +290,6 @@ gcTopBindings root topBinds = filter isLive topBinds
     goValueExpr VarV{} = return ()
     goValueExpr LitV{} = return ()
     goValueExpr PrimV{} = return ()
+
+gcTopBindings :: TopId -> [TopBinding Inert] -> [TopBinding Inert]
+gcTopBindings root = gcSweepTopBindings . gcMarkTopBindings root

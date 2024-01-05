@@ -19,6 +19,8 @@ data Style =
     localIdentColor :: Color,
     punctColor :: Color,
     borderColor :: Color,
+    borderColorLive :: Color,
+    borderColorDead :: Color,
     borderWidth :: Double
   }
 
