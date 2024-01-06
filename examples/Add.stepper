@@ -1,5 +1,5 @@
-z = Integer.add y y
+z = Integer.add(y, y)
 
 y = x
 
-x = Integer.add (Integer.mul -2 +3) (Integer.div +100 +2)
+x = Integer.add(Integer.mul(-2, +3), Integer.div(+100, +2))

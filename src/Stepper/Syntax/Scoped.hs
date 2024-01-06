@@ -74,7 +74,6 @@ data ValueExpr ref ctx where
   VarV :: !(Index ctx v) -> ValueExpr ref ctx
   LitV :: Lit -> ValueExpr ref ctx
   ConAppV :: Con -> [ValueExpr ref ctx] -> ValueExpr ref ctx
-  PrimV :: PrimOp -> ValueExpr ref ctx
 
 deriving instance Show ref => Show (ValueExpr ref ctx)
 
@@ -86,6 +85,7 @@ data Expr ref ctx where
   ValE :: !(ValueExpr ref ctx) -> Expr ref ctx
   LamE :: VarBndr v -> Expr ref (v : ctx) -> Expr ref ctx
   (:@) :: Expr ref ctx -> Expr ref ctx -> Expr ref ctx
+  PrimCallE :: PrimOp -> [Expr ref ctx] -> Expr ref ctx
   CaseE :: Expr ref ctx -> Branches ref ctx -> Expr ref ctx
   LetE ::
     HList (Binding ref (out ++ ctx)) out ->
@@ -102,6 +102,7 @@ extendExprCtx e0 =
     ValE val -> ValE (extendValueExprCtx @ctx' val)
     LamE varBndr e -> LamE varBndr (extendExprCtx @ctx' e)
     e1 :@ e2 -> extendExprCtx @ctx' e1 :@ extendExprCtx @ctx' e2
+    PrimCallE primop args -> PrimCallE primop (map (extendExprCtx @ctx') args)
     CaseE e bs -> CaseE (extendExprCtx @ctx' e) (extendBranchesCtx @ctx' bs)
     LetE (bs :: HList f out) e ->
       assocListAppend @_ @ctx @ctx' bs $
@@ -116,7 +117,6 @@ extendValueExprCtx e0 =
     VarV i -> VarV (extendIndexBase @ctx' i)
     LitV lit -> LitV lit
     ConAppV con args -> ConAppV con (map (extendValueExprCtx @ctx') args)
-    PrimV primop -> PrimV primop
 
 type Branches :: Type -> [VarInfo] -> Type
 data Branches ref ctx =
@@ -224,6 +224,7 @@ substExpr subst e0 =
       let subst' = shiftSubst1 subst
       in LamE varBndr (substExpr subst' e)
     e1 :@ e2 -> substExpr subst e1 :@ substExpr subst e2
+    PrimCallE primop args -> PrimCallE primop (map (substExpr subst) args)
     CaseE e bs -> CaseE (substExpr subst e) (substBranches subst bs)
     LetE bs e ->
       let subst' = shiftSubstN bs subst
@@ -239,7 +240,6 @@ substValueExpr subst e0 =
         SubstE e -> e
     LitV lit -> LitV lit
     ConAppV con args -> ConAppV con (map (substValueExpr subst) args)
-    PrimV primop -> PrimV primop
 
 substBranches :: Subst ref ctx ctx' -> Branches ref ctx -> Branches ref ctx'
 substBranches subst (Branches bs mb) = Branches (map (substBranch subst) bs) (fmap (substBranch subst) mb)

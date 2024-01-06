@@ -11,8 +11,10 @@ foldr = \f base xs ->
     Nil() -> base
     Cons(head, tail) -> f head (foldr f base tail)
 
-sum = foldr Integer.add +0
+sum = foldr add +0
+
+add = \a b -> Integer.add(a, b)
 
 inputlist = Cons(+1, Cons(+2, Cons(+3, Nil())))
 
-result = sum (map (\a -> Integer.mul a +2) inputlist)
+result = sum (map (\a -> Integer.mul(a, +2)) inputlist)

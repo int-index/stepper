@@ -45,7 +45,9 @@ rnExpr topIds = go
     go ctx (PConAppE con args) = do
       args' <- traverse (goValue ctx) args
       return (ValE (ConAppV con args'))
-    go _ (PPrimE primop) = return (ValE (PrimV primop))
+    go ctx (PPrimCallE primop args) = do
+      args' <- traverse (go ctx) args
+      return (PrimCallE primop args')
     go ctx (PLamE v e) =
       rnVarBndr v \varBndr -> do
         e' <- go (varBndr :& ctx) e

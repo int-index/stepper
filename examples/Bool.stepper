@@ -8,4 +8,4 @@ or = \a b ->
     False() -> b
     True()  -> True()
 
-result = or (and (Integer.eq +0 +0) (Integer.eq +0 +1)) (Integer.eq +1 +1)
+result = or (and Integer.eq(+0, +0) Integer.eq(+0, +1)) Integer.eq(+1, +1)

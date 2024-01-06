@@ -122,7 +122,7 @@ AtomExpr :
     Var { PVarE $1 }
   | Con Tuple(Expr) { PConAppE $1 (reverse $2) }
   | Lit { PLitE $1 }
-  | Prim { PPrimE $1 }
+  | Prim Tuple(Expr) { PPrimCallE $1 (reverse $2) }
   | '\\' Vars '->' Expr %shift { foldl (flip PLamE) $4 $2 }
   | 'case' Expr 'of' Block(Branch) %shift { PCaseE $2 (reverse $4) }
   | 'let' Block(Binding) 'in' Expr %shift { PLetE (reverse $2) $4 }

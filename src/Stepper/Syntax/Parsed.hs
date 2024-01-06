@@ -19,8 +19,8 @@ data PBranch = PBr PPat PExpr
 data PExpr =
     PVarE PVar
   | PConAppE PCon [PExpr]
+  | PPrimCallE PrimOp [PExpr]
   | PLitE Lit
-  | PPrimE PrimOp
   | PLamE PVar PExpr
   | PAppE PExpr PExpr
   | PCaseE PExpr [PBranch]

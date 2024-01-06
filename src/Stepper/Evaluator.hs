@@ -108,7 +108,6 @@ isValueHNF v =
     RefV{}    -> False
     LitV{}    -> True
     ConAppV{} -> True
-    PrimV{}   -> True
 
 isExprWHNF :: ClosedExpr TopId -> Bool
 isExprWHNF e =
@@ -116,6 +115,7 @@ isExprWHNF e =
     ValE v  -> isValueHNF v
     LamE{}  -> True
     _ :@ _  -> False
+    PrimCallE{} -> False
     CaseE{} -> False
     LetE{}  -> False
 
@@ -140,19 +140,19 @@ generateTopBinding env varBndr e = do
   return (RefV x)
 
 evalstepExpr :: TopEnv -> ClosedExpr TopId -> Outcome
-evalstepExpr env (ValE (PrimV primop) :@ lhs :@ rhs)
+evalstepExpr env (PrimCallE primop [lhs, rhs])
   | Just f <- matchNaturalBinOp primop
   = evalstepNaturalBinOp f lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
+    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
   | Just f <- matchIntegerBinOp primop
   = evalstepIntegerBinOp f lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
+    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
   | Integer_eq <- primop
   = evalstepIntegerEq lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> ValE (PrimV primop) :@ lhs' :@ rhs) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> ValE (PrimV primop) :@ lhs :@ rhs') (evalstepExpr env rhs)
+    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
+    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
 evalstepExpr env (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
   | otherwise = mapOutcomeExpr (\e' -> CaseE e' bs) (evalstepExpr env e)
@@ -298,6 +298,7 @@ gcMarkTopBindings roots topBinds = map mark topBinds
     goExpr (e1 :@ e2) = do
       goExpr e1
       goExpr e2
+    goExpr (PrimCallE _ args) = traverse_ goExpr args
     goExpr (LamE _ e) = goExpr e
     goExpr (CaseE e (Branches bs mb)) = do
       goExpr e
@@ -321,4 +322,3 @@ gcMarkTopBindings roots topBinds = map mark topBinds
     goValueExpr (ConAppV _ args) = traverse_ goValueExpr args
     goValueExpr VarV{} = return ()
     goValueExpr LitV{} = return ()
-    goValueExpr PrimV{} = return ()

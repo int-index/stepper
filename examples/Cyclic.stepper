@@ -6,8 +6,8 @@ fib' = fix \self -> \a b i ->
   case i of
     0 -> a
     _ ->
-      let b' = Natural.add a b
-          i' = Natural.sub i 1
+      let b' = Natural.add(a, b)
+          i' = Natural.sub(i, 1)
       in self b b' i'
 
-result = fib (Natural.add 1 (Natural.mul 2 5))
+result = fib Natural.add(1, Natural.mul(2, 5))

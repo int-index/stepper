@@ -1,5 +1,5 @@
 fibs =
-  let fibs' = zipWith Integer.add fibs (tail fibs)
+  let fibs' = zipWith add fibs (tail fibs)
   in Cons(+0, Cons(+1, fibs'))
 
 head = \xs ->
@@ -25,9 +25,11 @@ index = \i xs ->
   case i of
     0 -> head xs
     _ ->
-      case Natural.sub i 1 of { i' ->
+      case Natural.sub(i, 1) of { i' ->
       case tail xs of { xs' ->
       index i' xs' } }
+
+add = \a b -> Integer.add(a, b)
 
 result =
   case index 11 fibs of

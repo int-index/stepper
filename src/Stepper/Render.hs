@@ -132,6 +132,7 @@ renderExpr prec ctx (e1 :@ e2) =
   withStyle ?lctx.style $
   framedIf (prec >= appPrec) $
   renderExpr opPrec ctx e1 `horiz` ident " " `horiz` renderExpr appPrec ctx e2
+renderExpr _ ctx (PrimCallE primop args) = renderPrimCallE ctx primop args
 renderExpr prec ctx (CaseE e bs) =
   withStyle ?lctx.style $
   framedIf (prec > topPrec) $
@@ -154,7 +155,6 @@ renderValueExpr _ ctx (VarV i) =
     VB v -> renderPrefix localIdent v.str
 renderValueExpr _ _ (LitV lit) = renderLit lit
 renderValueExpr _ ctx (ConAppV con args) = renderConAppV ctx con args
-renderValueExpr _ _ (PrimV primop) = renderPrimOp primop
 
 renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding TopId ctx) out -> Layout
 renderBindings ctx = go
@@ -177,6 +177,14 @@ renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` punct " �
 renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` punct " → " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
 renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` punct " → " `horiz` renderExpr topPrec ctx e
 renderBranch ctx (WildP :-> e) = punct "_" `horiz` punct " → " `horiz` renderExpr topPrec ctx e
+
+renderPrimCallE :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> PrimOp -> [Expr TopId ctx] -> Layout
+renderPrimCallE ctx primop args = renderPrimOp primop `horiz` punct "(" `horiz` go args `horiz` punct ")"
+  where
+    go :: [Expr TopId ctx] -> Layout
+    go [] = ident ""
+    go [arg] = renderExpr topPrec ctx arg
+    go (arg : args') = renderExpr topPrec ctx arg `horiz` punct ", " `horiz` go args'
 
 renderConAppV :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> Con -> [ValueExpr TopId ctx] -> Layout
 renderConAppV ctx con args = renderPrefix ident con.str `horiz` punct "(" `horiz` go args `horiz` punct ")"
