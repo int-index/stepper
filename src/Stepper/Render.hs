@@ -121,7 +121,7 @@ appPrec = 4
 opPrec = 2
 topPrec = 0
 
-renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr TopId ctx -> Layout
+renderExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> Expr ctx -> Layout
 renderExpr prec ctx (ValE val) = renderValueExpr prec ctx val
 renderExpr prec ctx (LamE varBndr@(VB v) e) =
   withStyle ?lctx.style $
@@ -148,7 +148,7 @@ renderExpr prec ctx (LetE bs e) =
     `vert`
     (punct "in " `horiz` renderExpr topPrec ctx' e)
 
-renderValueExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> ValueExpr TopId ctx -> Layout
+renderValueExpr :: (?lctx :: LayoutCtx) => Prec -> HList VarBndr ctx -> ValueExpr ctx -> Layout
 renderValueExpr _ _ (RefV v) = renderTopId v
 renderValueExpr _ ctx (VarV i) =
   case ctx !!& i of
@@ -156,40 +156,40 @@ renderValueExpr _ ctx (VarV i) =
 renderValueExpr _ _ (LitV lit) = renderLit lit
 renderValueExpr _ ctx (ConAppV con args) = renderConAppV ctx con args
 
-renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding TopId ctx) out -> Layout
+renderBindings :: forall ctx out. (?lctx :: LayoutCtx) => HList VarBndr ctx -> HList (Binding ctx) out -> Layout
 renderBindings ctx = go
   where
-    go :: forall out1. HList (Binding TopId ctx) out1 -> Layout
+    go :: forall out1. HList (Binding ctx) out1 -> Layout
     go HNil = punct "{}"
     go (b :& HNil) = renderBinding ctx b
     go (b :& bs) = renderBinding ctx b `vert` go bs
 
-renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding TopId ctx v -> Layout
+renderBinding :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Binding ctx v -> Layout
 renderBinding ctx (Bind (VB v) e) = renderPrefix localIdent v.str `horiz` punct " = " `horiz` renderExpr topPrec ctx e
 
-renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branches TopId ctx -> Layout
+renderBranches :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branches ctx -> Layout
 renderBranches ctx (Branches bs mb) = foldr1 vert (bs' ++ maybeToList mb')
   where bs' = map (renderBranch ctx) bs
         mb' = fmap (renderBranch ctx) mb
 
-renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch TopId psort ctx -> Layout
+renderBranch :: (?lctx :: LayoutCtx) => HList VarBndr ctx -> Branch psort ctx -> Layout
 renderBranch ctx (VarP varBndr :-> e) = renderVarBndr varBndr `horiz` punct " → " `horiz` renderExpr topPrec (varBndr :& ctx) e
 renderBranch ctx (ConAppP con varBndrs :-> e) = renderConAppP con varBndrs `horiz` punct " → " `horiz` renderExpr topPrec (varBndrs ++& ctx) e
 renderBranch ctx (LitP lit :-> e) = renderLit lit `horiz` punct " → " `horiz` renderExpr topPrec ctx e
 renderBranch ctx (WildP :-> e) = punct "_" `horiz` punct " → " `horiz` renderExpr topPrec ctx e
 
-renderPrimCallE :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> PrimOp -> [Expr TopId ctx] -> Layout
+renderPrimCallE :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> PrimOp -> [Expr ctx] -> Layout
 renderPrimCallE ctx primop args = renderPrimOp primop `horiz` punct "(" `horiz` go args `horiz` punct ")"
   where
-    go :: [Expr TopId ctx] -> Layout
+    go :: [Expr ctx] -> Layout
     go [] = ident ""
     go [arg] = renderExpr topPrec ctx arg
     go (arg : args') = renderExpr topPrec ctx arg `horiz` punct ", " `horiz` go args'
 
-renderConAppV :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> Con -> [ValueExpr TopId ctx] -> Layout
+renderConAppV :: forall ctx. (?lctx :: LayoutCtx) => HList VarBndr ctx -> Con -> [ValueExpr ctx] -> Layout
 renderConAppV ctx con args = renderPrefix ident con.str `horiz` punct "(" `horiz` go args `horiz` punct ")"
   where
-    go :: [ValueExpr TopId ctx] -> Layout
+    go :: [ValueExpr ctx] -> Layout
     go [] = ident ""
     go [arg] = renderValueExpr topPrec ctx arg
     go (arg : args') = renderValueExpr topPrec ctx arg `horiz` punct ", " `horiz` go args'

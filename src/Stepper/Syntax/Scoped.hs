@@ -49,58 +49,58 @@ type Module :: Phase -> Type
 data Module phase = Mod [TopBinding] (EvalStack phase) (LiveSet phase)
 deriving instance (Show (EvalStack phase), Show (LiveSet phase)) => Show (Module phase)
 
-data TopBinding = TopBind TopId (ClosedExpr TopId)
+data TopBinding = TopBind TopId ClosedExpr
   deriving Show
 
 getTopBindingId :: TopBinding -> TopId
 getTopBindingId (TopBind name _) = name
 
-getTopBindingExpr :: TopBinding -> ClosedExpr TopId
+getTopBindingExpr :: TopBinding -> ClosedExpr
 getTopBindingExpr (TopBind _ e) = e
 
-type Value :: Type -> Type
-type Value ref = ValueExpr ref '[]
+type Value :: Type
+type Value = ValueExpr '[]
 
 -- A value-like expression cannot be reduced,
 -- so it is safe to duplicate/inline it.
-type ValueExpr :: Type -> [VarInfo] -> Type
-data ValueExpr ref ctx where
-  RefV :: ref -> ValueExpr ref ctx
-  VarV :: !(Index ctx v) -> ValueExpr ref ctx
-  LitV :: Lit -> ValueExpr ref ctx
-  ConAppV :: Con -> [ValueExpr ref ctx] -> ValueExpr ref ctx
+type ValueExpr :: [VarInfo] -> Type
+data ValueExpr ctx where
+  RefV :: TopId -> ValueExpr ctx
+  VarV :: !(Index ctx v) -> ValueExpr ctx
+  LitV :: Lit -> ValueExpr ctx
+  ConAppV :: Con -> [ValueExpr ctx] -> ValueExpr ctx
 
-deriving instance Show ref => Show (ValueExpr ref ctx)
+deriving instance Show (ValueExpr ctx)
 
-type ClosedExpr :: Type -> Type
-type ClosedExpr ref = Expr ref '[]
+type ClosedExpr :: Type
+type ClosedExpr = Expr '[]
 
-type Expr :: Type -> [VarInfo] -> Type
-data Expr ref ctx where
-  ValE :: !(ValueExpr ref ctx) -> Expr ref ctx
-  LamE :: VarBndr v -> Expr ref (v : ctx) -> Expr ref ctx
-  (:@) :: Expr ref ctx -> Expr ref ctx -> Expr ref ctx
-  PrimCallE :: PrimOp -> [Expr ref ctx] -> Expr ref ctx
-  CaseE :: Expr ref ctx -> Branches ref ctx -> Expr ref ctx
+type Expr :: [VarInfo] -> Type
+data Expr ctx where
+  ValE :: !(ValueExpr ctx) -> Expr ctx
+  LamE :: VarBndr v -> Expr (v : ctx) -> Expr ctx
+  (:@) :: Expr ctx -> Expr ctx -> Expr ctx
+  PrimCallE :: PrimOp -> [Expr ctx] -> Expr ctx
+  CaseE :: Expr ctx -> Branches ctx -> Expr ctx
   LetE ::
-    HList (Binding ref (out ++ ctx)) out ->
-    Expr ref (out ++ ctx) ->
-    Expr ref ctx
+    HList (Binding (out ++ ctx)) out ->
+    Expr (out ++ ctx) ->
+    Expr ctx
 
 infixl 2 :@
 
-deriving instance Show ref => Show (Expr ref ctx)
+deriving instance Show (Expr ctx)
 
-type ExprWrapper :: Type -> Type
-data ExprWrapper ref where
-  CaseEW :: Branches ref '[] -> ExprWrapper ref
-  ArgEW :: Expr ref '[] -> ExprWrapper ref
+type ExprWrapper :: Type
+data ExprWrapper where
+  CaseEW :: Branches '[] -> ExprWrapper
+  ArgEW :: Expr '[] -> ExprWrapper
 
-wrapExpr :: ExprWrapper ref -> ClosedExpr ref -> ClosedExpr ref
+wrapExpr :: ExprWrapper -> ClosedExpr -> ClosedExpr
 wrapExpr (CaseEW bs) e = CaseE e bs
 wrapExpr (ArgEW arg) e = e :@ arg
 
-extendExprCtx :: forall ctx' ctx ref. Expr ref ctx -> Expr ref (ctx ++ ctx')
+extendExprCtx :: forall ctx' ctx. Expr ctx -> Expr (ctx ++ ctx')
 extendExprCtx e0 =
   case e0 of
     ValE val -> ValE (extendValueExprCtx @ctx' val)
@@ -114,7 +114,7 @@ extendExprCtx e0 =
         (hmap (extendBindingCtx @ctx' @ctx @out) bs)
         (extendExprCtx @ctx' e)
 
-extendValueExprCtx :: forall ctx' ctx ref. ValueExpr ref ctx -> ValueExpr ref (ctx ++ ctx')
+extendValueExprCtx :: forall ctx' ctx. ValueExpr ctx -> ValueExpr (ctx ++ ctx')
 extendValueExprCtx e0 =
   case e0 of
     RefV ref -> RefV ref
@@ -122,29 +122,29 @@ extendValueExprCtx e0 =
     LitV lit -> LitV lit
     ConAppV con args -> ConAppV con (map (extendValueExprCtx @ctx') args)
 
-type Branches :: Type -> [VarInfo] -> Type
-data Branches ref ctx =
+type Branches :: [VarInfo] -> Type
+data Branches ctx =
   Branches
-    [Branch ref MatchPat ctx]
-    (Maybe (Branch ref CatchAllPat ctx))
+    [Branch MatchPat ctx]
+    (Maybe (Branch CatchAllPat ctx))
 
-deriving instance Show ref => Show (Branches ref ctx)
+deriving instance Show (Branches ctx)
 
-type Branch :: Type -> PatSort -> [VarInfo] -> Type
-data Branch ref psort ctx where
-  (:->) :: Pat psort out -> Expr ref (out ++ ctx) -> Branch ref psort ctx
+type Branch :: PatSort -> [VarInfo] -> Type
+data Branch psort ctx where
+  (:->) :: Pat psort out -> Expr (out ++ ctx) -> Branch psort ctx
 
 infix 0 :->
 
-deriving instance Show ref => Show (Branch ref psort ctx)
+deriving instance Show (Branch psort ctx)
 
-extendBranchesCtx :: forall ctx' ref ctx. Branches ref ctx -> Branches ref (ctx ++ ctx')
+extendBranchesCtx :: forall ctx' ctx. Branches ctx -> Branches (ctx ++ ctx')
 extendBranchesCtx (Branches bs mb) = Branches bs' mb'
   where
     bs' = map (extendBranchCtx @ctx') bs
     mb' = fmap (extendBranchCtx @ctx') mb
 
-extendBranchCtx :: forall ctx' ref psort ctx. Branch ref psort ctx -> Branch ref psort (ctx ++ ctx')
+extendBranchCtx :: forall ctx' psort ctx. Branch psort ctx -> Branch psort (ctx ++ ctx')
 extendBranchCtx (p :-> e) = p :-> e'
   where
     e' =
@@ -170,37 +170,37 @@ patVarBndrs p =
     LitP _ -> HNil
     WildP -> HNil
 
-type Binding :: Type -> [VarInfo] -> VarInfo -> Type
-data Binding ref ctx v where
-  Bind :: VarBndr v -> Expr ref ctx -> Binding ref ctx v
+type Binding :: [VarInfo] -> VarInfo -> Type
+data Binding ctx v where
+  Bind :: VarBndr v -> Expr ctx -> Binding ctx v
 
-deriving instance Show ref => Show (Binding ref ctx v)
+deriving instance Show (Binding ctx v)
 
-extendBindingCtx :: forall ctx' ctx out ref v. Binding ref (out ++ ctx) v -> Binding ref ((out ++ ctx) ++ ctx') v
+extendBindingCtx :: forall ctx' ctx out v. Binding (out ++ ctx) v -> Binding ((out ++ ctx) ++ ctx') v
 extendBindingCtx (Bind varBndr e) = Bind varBndr (extendExprCtx @ctx' e)
 
-getBindingVarBndr :: Binding ref ctx v -> VarBndr v
+getBindingVarBndr :: Binding ctx v -> VarBndr v
 getBindingVarBndr (Bind varBndr _) = varBndr
 
-getBindingExpr :: Binding ref ctx v -> Expr ref ctx
+getBindingExpr :: Binding ctx v -> Expr ctx
 getBindingExpr (Bind _ e) = e
 
-data SubstResult ref ctx x where
-  SubstI :: Index ctx x -> SubstResult ref ctx x
-  SubstE :: (forall ctx'. ValueExpr ref ctx') -> SubstResult ref ctx x
+data SubstResult ctx x where
+  SubstI :: Index ctx x -> SubstResult ctx x
+  SubstE :: (forall ctx'. ValueExpr ctx') -> SubstResult ctx x
 
-newtype Subst ref ctx ctx' =
+newtype Subst ctx ctx' =
   MkSubst (forall x rctx.
     (Index ctx' x -> Index rctx x) ->   -- function to apply to the returned indices (SubstI)
-    Index ctx x -> SubstResult ref rctx x)
+    Index ctx x -> SubstResult rctx x)
 
-applySubst :: Subst ref ctx ctx' -> Index ctx x -> SubstResult ref ctx' x
+applySubst :: Subst ctx ctx' -> Index ctx x -> SubstResult ctx' x
 applySubst subst = applySubst' subst id
 
-applySubst' :: Subst ref ctx ctx' -> forall x rctx. (Index ctx' x -> Index rctx x) -> Index ctx x -> SubstResult ref rctx x
+applySubst' :: Subst ctx ctx' -> forall x rctx. (Index ctx' x -> Index rctx x) -> Index ctx x -> SubstResult rctx x
 applySubst' (MkSubst f) = f
 
-mkSubst :: HList (Const (Value ref)) ctx -> Subst ref ctx ctx'
+mkSubst :: HList (Const Value) ctx -> Subst ctx ctx'
 mkSubst HNil =
   MkSubst \_ -> noElements
 mkSubst (Const e :& es) =
@@ -209,18 +209,18 @@ mkSubst (Const e :& es) =
       Z -> SubstE (extendValueExprCtx e)
       S n -> applySubst' (mkSubst es) cont n
 
-shiftSubstN :: HList f out -> Subst ref ctx ctx' -> Subst ref (out ++ ctx) (out ++ ctx')
+shiftSubstN :: HList f out -> Subst ctx ctx' -> Subst (out ++ ctx) (out ++ ctx')
 shiftSubstN HNil = id
 shiftSubstN (_ :& xs) = shiftSubst1 . shiftSubstN xs
 
-shiftSubst1 :: Subst ref ctx ctx' -> Subst ref (x : ctx) (x : ctx')
+shiftSubst1 :: Subst ctx ctx' -> Subst (x : ctx) (x : ctx')
 shiftSubst1 subst =
   MkSubst \cont i ->
     case i of
       Z -> SubstI (cont Z)
       S n -> applySubst' subst (cont . S) n
 
-substExpr :: Subst ref ctx ctx' -> Expr ref ctx -> Expr ref ctx'
+substExpr :: Subst ctx ctx' -> Expr ctx -> Expr ctx'
 substExpr subst e0 =
   case e0 of
     ValE val -> ValE (substValueExpr subst val)
@@ -234,7 +234,7 @@ substExpr subst e0 =
       let subst' = shiftSubstN bs subst
       in LetE (hmap (substBinding subst') bs) (substExpr subst' e)
 
-substValueExpr :: Subst ref ctx ctx' -> ValueExpr ref ctx -> ValueExpr ref ctx'
+substValueExpr :: Subst ctx ctx' -> ValueExpr ctx -> ValueExpr ctx'
 substValueExpr subst e0 =
   case e0 of
     RefV ref -> RefV ref
@@ -245,13 +245,13 @@ substValueExpr subst e0 =
     LitV lit -> LitV lit
     ConAppV con args -> ConAppV con (map (substValueExpr subst) args)
 
-substBranches :: Subst ref ctx ctx' -> Branches ref ctx -> Branches ref ctx'
+substBranches :: Subst ctx ctx' -> Branches ctx -> Branches ctx'
 substBranches subst (Branches bs mb) = Branches (map (substBranch subst) bs) (fmap (substBranch subst) mb)
 
-substBranch :: Subst ref ctx ctx' -> Branch ref psort ctx -> Branch ref psort ctx'
+substBranch :: Subst ctx ctx' -> Branch psort ctx -> Branch psort ctx'
 substBranch subst (p :-> e) =
   let subst' = shiftSubstN (patVarBndrs p) subst
   in p :-> substExpr subst' e
 
-substBinding :: Subst ref ctx ctx' -> Binding ref ctx x -> Binding ref ctx' x
+substBinding :: Subst ctx ctx' -> Binding ctx x -> Binding ctx' x
 substBinding subst (Bind varBndr e) = Bind varBndr (substExpr subst e)

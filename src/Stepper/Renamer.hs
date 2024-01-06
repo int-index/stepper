@@ -33,10 +33,10 @@ rnBinding topIds (PBind v e) = do
   e' <- rnExpr topIds HNil e
   return (TopBind (TopIdUser v) e')
 
-rnExpr :: forall ctx. Set PVar -> HList VarBndr ctx -> PExpr -> Renamer (Expr TopId ctx)
+rnExpr :: forall ctx. Set PVar -> HList VarBndr ctx -> PExpr -> Renamer (Expr ctx)
 rnExpr topIds = go
   where
-    go :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (Expr TopId ctx1)
+    go :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (Expr ctx1)
     go ctx (PVarE v)
       | Just (MkSome i) <- lookupLocal ctx v = return (ValE (VarV i))
       | Set.member v topIds = return (ValE (RefV (TopIdUser v)))
@@ -68,7 +68,7 @@ rnExpr topIds = go
         e' <- go ctx' e
         return (LetE bs'' e')
 
-    goValue :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (ValueExpr TopId ctx1)
+    goValue :: forall ctx1. HList VarBndr ctx1 -> PExpr -> Renamer (ValueExpr ctx1)
     goValue ctx e = do
       e' <- go ctx e
       case e' of
@@ -93,29 +93,29 @@ rnBindingsLHS (b : bs) cont =
 getHalfRnBindingVarBndr :: HalfRnBinding v -> VarBndr v
 getHalfRnBindingVarBndr (HalfRnBind varBndr _) = varBndr
 
-rnBindingRHS :: forall ctx v. Set PVar -> HList VarBndr ctx -> HalfRnBinding v -> Renamer (Binding TopId ctx v)
+rnBindingRHS :: forall ctx v. Set PVar -> HList VarBndr ctx -> HalfRnBinding v -> Renamer (Binding ctx v)
 rnBindingRHS topIds ctx (HalfRnBind varBndr e) = do
   e' <- rnExpr topIds ctx e
   return (Bind varBndr e')
 
-data SomeBranch ref ctx = forall psort. SomeBranch (Branch ref psort ctx)
+data SomeBranch ctx = forall psort. SomeBranch (Branch psort ctx)
 
-isMatchBranch :: Branch ref psort ctx -> Maybe (psort :~: MatchPat)
+isMatchBranch :: Branch psort ctx -> Maybe (psort :~: MatchPat)
 isMatchBranch (LitP{} :-> _)    = Just Refl
 isMatchBranch (ConAppP{} :-> _) = Just Refl
 isMatchBranch _ = Nothing
 
-isCatchAllBranch :: Branch ref psort ctx -> Maybe (psort :~: CatchAllPat)
+isCatchAllBranch :: Branch psort ctx -> Maybe (psort :~: CatchAllPat)
 isCatchAllBranch (WildP :-> _)  = Just Refl
 isCatchAllBranch (VarP{} :-> _) = Just Refl
 isCatchAllBranch _ = Nothing
 
-rnBranches :: forall ctx. Set PVar -> HList VarBndr ctx -> [PBranch] -> Renamer (Branches TopId ctx)
+rnBranches :: forall ctx. Set PVar -> HList VarBndr ctx -> [PBranch] -> Renamer (Branches ctx)
 rnBranches topIds ctx bs0 = do
     bs' <- traverse (rnBranch topIds ctx) bs0
     goMatch [] bs'
   where
-    goMatch, goCatchAll :: [Branch TopId MatchPat ctx] -> [SomeBranch TopId ctx] -> Renamer (Branches TopId ctx)
+    goMatch, goCatchAll :: [Branch MatchPat ctx] -> [SomeBranch ctx] -> Renamer (Branches ctx)
     goMatch acc (SomeBranch b : bs)
       | Just Refl <- isMatchBranch b
       = goMatch (b : acc) bs
@@ -126,7 +126,7 @@ rnBranches topIds ctx bs0 = do
     goCatchAll bs [] = return (Branches bs Nothing)
     goCatchAll _ _ = Left RnErrBadBranchOrder
 
-rnBranch :: forall ctx. Set PVar -> HList VarBndr ctx -> PBranch -> Renamer (SomeBranch TopId ctx)
+rnBranch :: forall ctx. Set PVar -> HList VarBndr ctx -> PBranch -> Renamer (SomeBranch ctx)
 rnBranch topIds ctx (PBr p e) =
   rnPat p \out p' -> do
     e' <- rnExpr topIds (out ++& ctx) e

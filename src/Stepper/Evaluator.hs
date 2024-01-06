@@ -78,7 +78,7 @@ lookupTopBinding name (b : bs)
   | getTopBindingId b == name = Just b
   | otherwise = lookupTopBinding name bs
 
-updateTopBinding :: TopId -> ClosedExpr TopId -> [TopBinding] -> [TopBinding]
+updateTopBinding :: TopId -> ClosedExpr -> [TopBinding] -> [TopBinding]
 updateTopBinding _ _ [] = []
 updateTopBinding name e (b'@(TopBind name' _) : bs)
   | name == name' = TopBind name e : bs
@@ -86,24 +86,24 @@ updateTopBinding name e (b'@(TopBind name' _) : bs)
 
 data Outcome =
     Stuck
-  | Update (ClosedExpr TopId) [TopBinding]
+  | Update ClosedExpr [TopBinding]
   | Jump TopId
 
-wrapOutcomeExpr :: ExprWrapper TopId -> Outcome -> Outcome
+wrapOutcomeExpr :: ExprWrapper -> Outcome -> Outcome
 wrapOutcomeExpr _ outcome@Stuck{} = outcome
 wrapOutcomeExpr _ outcome@Jump{}  = outcome
 wrapOutcomeExpr ew (Update e bs) = Update (wrapExpr ew e) bs
 
 type TopEnv = Map TopId TopBinding
 
-isValueHNF :: Value TopId -> Bool
+isValueHNF :: Value -> Bool
 isValueHNF v =
   case v of
     RefV{}    -> False
     LitV{}    -> True
     ConAppV{} -> True
 
-isExprWHNF :: ClosedExpr TopId -> Bool
+isExprWHNF :: ClosedExpr -> Bool
 isExprWHNF e =
   case e of
     ValE v  -> isValueHNF v
@@ -120,20 +120,20 @@ freshId env (VB x) =
     n:_ -> TopIdGen x (n + 1)
 
 -- NB: We assume that the VarBndrs in the list have unique names.
-generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding] (HList (Const (Value TopId)) out)
+generateTopBindings :: TopEnv -> HList (Binding '[]) out -> State [TopBinding] (HList (Const Value) out)
 generateTopBindings _ HNil = return HNil
 generateTopBindings env (Bind varBndr e :& bs) = do
   e' <- generateTopBinding env varBndr e
   fmap (Const e' :&) (generateTopBindings env bs)
 
-generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding] (Value TopId)
+generateTopBinding :: TopEnv -> VarBndr v -> Expr '[] -> State [TopBinding] Value
 generateTopBinding _ _ (ValE val) = return val
 generateTopBinding env varBndr e = do
   let x = freshId env varBndr
   modify (TopBind x e :)
   return (RefV x)
 
-evalstepExpr :: TopEnv -> ClosedExpr TopId -> Outcome
+evalstepExpr :: TopEnv -> ClosedExpr -> Outcome
 evalstepExpr _ (PrimCallE primop [lhs, rhs])
   | Just f <- matchNaturalBinOp primop = evalstepNaturalBinOp f lhs rhs
   | Just f <- matchIntegerBinOp primop = evalstepIntegerBinOp f lhs rhs
@@ -142,10 +142,9 @@ evalstepExpr env (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
   | otherwise = wrapOutcomeExpr (CaseEW bs) (evalstepExpr env e)
 evalstepExpr env (ValE (RefV ref))
-  | Just (TopBind _ e) <- Map.lookup ref env
-  , isExprWHNF e
-  = Update (extendExprCtx e) []
+  | isExprWHNF e = Update (extendExprCtx e) []
   | otherwise = Jump ref
+  where TopBind _ e = unwrapBindingLookup (Map.lookup ref env)
 evalstepExpr env (LamE varBndr e1 :@ e2) =
   let (substItem, topBindings) = runState (generateTopBinding env varBndr e2) []
       subst = mkSubst (Const substItem :& HNil)
@@ -160,7 +159,7 @@ evalstepExpr env (LetE bs e) =
   in Update (substExpr subst e) topBindings
 evalstepExpr _ _ = Stuck
 
-evalstepCaseOfVal :: Value TopId -> Branches TopId '[] -> Outcome
+evalstepCaseOfVal :: Value -> Branches '[] -> Outcome
 evalstepCaseOfVal val (Branches bs mb) = go bs
   where
     go [] =
@@ -202,8 +201,8 @@ matchLit _ _ = Nothing
 
 evalstepNaturalBinOp ::
   (Natural -> Natural -> Natural) ->
-  ClosedExpr TopId ->
-  ClosedExpr TopId ->
+  ClosedExpr ->
+  ClosedExpr ->
   Outcome
 evalstepNaturalBinOp f lhs rhs
   | ValE (LitV (NatL a)) <- lhs, ValE (LitV (NatL b)) <- rhs
@@ -212,8 +211,8 @@ evalstepNaturalBinOp f lhs rhs
 
 evalstepIntegerBinOp ::
   (Integer -> Integer -> Integer) ->
-  ClosedExpr TopId ->
-  ClosedExpr TopId ->
+  ClosedExpr ->
+  ClosedExpr ->
   Outcome
 evalstepIntegerBinOp f lhs rhs
   | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
@@ -221,15 +220,15 @@ evalstepIntegerBinOp f lhs rhs
   | otherwise = Stuck
 
 evalstepIntegerEq ::
-  ClosedExpr TopId ->
-  ClosedExpr TopId ->
+  ClosedExpr ->
+  ClosedExpr ->
   Outcome
 evalstepIntegerEq lhs rhs
   | ValE (LitV (IntL a)) <- lhs, ValE (LitV (IntL b)) <- rhs
   = Update (ValE (primBool (a == b))) []
   | otherwise = Stuck
 
-primBool :: Bool -> Value TopId
+primBool :: Bool -> Value
 primBool True  = ConAppV builtInStrings._True  []
 primBool False = ConAppV builtInStrings._False []
 
@@ -260,10 +259,10 @@ gcComputeLiveSet roots topBinds = liveSet
         rootExprs = fmap getExpr roots
         visited = Set.fromList (NE.toList roots)
 
-    getExpr :: TopId -> ClosedExpr TopId
+    getExpr :: TopId -> ClosedExpr
     getExpr name = getTopBindingExpr (unwrapBindingLookup (Map.lookup name env))
 
-    goExpr :: Expr TopId ctx -> State (Set TopId) ()
+    goExpr :: Expr ctx -> State (Set TopId) ()
     goExpr (ValE e) = goValueExpr e
     goExpr (e1 :@ e2) = do
       goExpr e1
@@ -278,10 +277,10 @@ gcComputeLiveSet roots topBinds = liveSet
       htraverse_ (goExpr . getBindingExpr) bs
       goExpr e
 
-    goBranch :: Branch TopId psort ctx -> State (Set TopId) ()
+    goBranch :: Branch psort ctx -> State (Set TopId) ()
     goBranch (_ :-> e1) = goExpr e1
 
-    goValueExpr :: ValueExpr TopId ctx -> State (Set TopId) ()
+    goValueExpr :: ValueExpr ctx -> State (Set TopId) ()
     goValueExpr (RefV ref) = do
       visited <- get
       if Set.member ref visited
