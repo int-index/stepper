@@ -96,6 +96,15 @@ infixl 2 :@
 
 deriving instance Show ref => Show (Expr ref ctx)
 
+type ExprWrapper :: Type -> Type
+data ExprWrapper ref where
+  CaseEW :: Branches ref '[] -> ExprWrapper ref
+  ArgEW :: Expr ref '[] -> ExprWrapper ref
+
+wrapExpr :: ExprWrapper ref -> ClosedExpr ref -> ClosedExpr ref
+wrapExpr (CaseEW bs) e = CaseE e bs
+wrapExpr (ArgEW arg) e = e :@ arg
+
 extendExprCtx :: forall ctx' ctx ref. Expr ref ctx -> Expr ref (ctx ++ ctx')
 extendExprCtx e0 =
   case e0 of

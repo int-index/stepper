@@ -91,10 +91,10 @@ data Outcome =
   | Update (ClosedExpr TopId) [TopBinding Eval]
   | Jump TopId
 
-mapOutcomeExpr :: (ClosedExpr TopId -> ClosedExpr TopId) -> Outcome -> Outcome
-mapOutcomeExpr _ outcome@Stuck{} = outcome
-mapOutcomeExpr _ outcome@Jump{}  = outcome
-mapOutcomeExpr f (Update e bs) = Update (f e) bs
+wrapOutcomeExpr :: ExprWrapper TopId -> Outcome -> Outcome
+wrapOutcomeExpr _ outcome@Stuck{} = outcome
+wrapOutcomeExpr _ outcome@Jump{}  = outcome
+wrapOutcomeExpr ew (Update e bs) = Update (wrapExpr ew e) bs
 
 type TopEnv = Map TopId (TopBinding Inert)
 
@@ -142,7 +142,7 @@ evalstepExpr _ (PrimCallE primop [lhs, rhs])
   | Integer_eq <- primop = evalstepIntegerEq lhs rhs
 evalstepExpr env (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
-  | otherwise = mapOutcomeExpr (\e' -> CaseE e' bs) (evalstepExpr env e)
+  | otherwise = wrapOutcomeExpr (CaseEW bs) (evalstepExpr env e)
 evalstepExpr env (ValE (RefV ref))
   | Just (TopBind _ _ e) <- Map.lookup ref env
   , isExprWHNF e
@@ -153,7 +153,7 @@ evalstepExpr env (LamE varBndr e1 :@ e2) =
       subst = mkSubst (Const substItem :& HNil)
   in Update (substExpr subst e1) topBindings
 evalstepExpr env (e1 :@ e2) =
-  mapOutcomeExpr (\e1' -> e1' :@ e2) (evalstepExpr env e1)
+  wrapOutcomeExpr (ArgEW e2) (evalstepExpr env e1)
 evalstepExpr env (LetE bs e) =
   rightIdListAppend bs $
   let (substItems, topBindings) = runState (generateTopBindings env localBindings) []
