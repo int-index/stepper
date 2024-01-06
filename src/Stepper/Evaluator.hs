@@ -7,10 +7,8 @@ import qualified Data.Set as Set
 import Data.Functor.Const
 import Data.Inductive
 import Numeric.Natural
-import Control.Monad
 import Control.Monad.State
 import Data.Foldable
-import Data.Maybe
 import qualified Data.List.NonEmpty as NE
 
 import Stepper.Syntax.Basic
@@ -18,24 +16,24 @@ import Stepper.Syntax.Scoped
 import Stepper.BuiltIn (BuiltInStrings(..), builtInStrings)
 
 gcMark :: Module Eval -> Maybe (Module GarbageMarked)
-gcMark (Mod bs stk) =
-  do
-    let bs' = gcMarkTopBindings stk bs
-    guard (any isDead bs')
-    Just (Mod bs' stk)
+gcMark (Mod bs stk _)
+  | all isLive bs = Nothing
+  | otherwise     = Just (Mod bs stk liveSet)
   where
-    isDead (TopBind Dead _ _) = True
-    isDead _ = False
+    liveSet = gcComputeLiveSet stk bs
+    isLive b = Set.member (getTopBindingId b) liveSet
 
 gcSweep :: Module GarbageMarked -> Module Eval
-gcSweep (Mod bs stk) = Mod (gcSweepTopBindings bs) stk
+gcSweep (Mod bs stk liveSet) = Mod (filter isLive bs) stk ()
+  where
+    isLive b = Set.member (getTopBindingId b) liveSet
 
 evalStart :: Module Inert -> TopId -> Maybe (Module Eval)
-evalStart (Mod bs _) name = do
-  TopBind _ _ e <- lookupTopBinding name bs
+evalStart (Mod bs _ _) name = do
+  TopBind _ e <- lookupTopBinding name bs
   if isExprWHNF e
     then Nothing  -- nothing to evaluate
-    else Just $ Mod (map coerceTopBinding bs) (NE.singleton name)
+    else Just $ Mod bs (NE.singleton name) ()
 
 data EvalResult =
     EvalStuck                  -- can't make any progress
@@ -44,13 +42,13 @@ data EvalResult =
   | EvalReducedLast (Module Inert) -- reduced the last expression, nothing to do
 
 evalStep :: Module Eval -> EvalResult
-evalStep (Mod bs stk) =
+evalStep (Mod bs stk _) =
   if Set.member name visited
   then EvalStuck
   else
     case evalstepExpr env e of
       Stuck -> EvalStuck
-      Jump name' -> EvalPushed (Mod bs (NE.cons name' stk))
+      Jump name' -> EvalPushed (Mod bs (NE.cons name' stk) ())
       Update e' newBindings ->
         let
           bs'  = updateTopBinding name e' bs ++ newBindings
@@ -59,11 +57,11 @@ evalStep (Mod bs stk) =
             | otherwise     = NE.toList stk  -- more to do in this expr
         in
           case NE.nonEmpty stk' of
-            Nothing    -> EvalReducedLast (Mod (map coerceTopBinding bs') ())
-            Just stk'' -> EvalReduced (Mod bs' stk'')
+            Nothing    -> EvalReducedLast (Mod bs' () ())
+            Just stk'' -> EvalReduced (Mod bs' stk'' ())
   where
-    TopBind _ _ e = unwrapBindingLookup (Map.lookup name env)
-    env = mkTopEnv (map coerceTopBinding bs)
+    TopBind _ e = unwrapBindingLookup (Map.lookup name env)
+    env = mkTopEnv bs
     visited = Set.fromList (NE.tail stk)
     name = NE.head stk
 
@@ -71,24 +69,24 @@ unwrapBindingLookup :: Maybe a -> a
 unwrapBindingLookup Nothing  = error "impossible: reference to a non-existent binding"  -- the renamer should have ruled those out
 unwrapBindingLookup (Just x) = x
 
-mkTopEnv :: [TopBinding phase] -> Map TopId (TopBinding phase)
-mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind _ name _) <- bs ]
+mkTopEnv :: [TopBinding] -> Map TopId TopBinding
+mkTopEnv bs = Map.fromList [ (name, b) | b@(TopBind name _) <- bs ]
 
-lookupTopBinding :: TopId -> [TopBinding phase] -> Maybe (TopBinding phase)
+lookupTopBinding :: TopId -> [TopBinding] -> Maybe TopBinding
 lookupTopBinding _ [] = Nothing
 lookupTopBinding name (b : bs)
   | getTopBindingId b == name = Just b
   | otherwise = lookupTopBinding name bs
 
-updateTopBinding :: TopId -> ClosedExpr TopId -> [TopBinding Eval] -> [TopBinding Eval]
+updateTopBinding :: TopId -> ClosedExpr TopId -> [TopBinding] -> [TopBinding]
 updateTopBinding _ _ [] = []
-updateTopBinding name e (b'@(TopBind _ name' _) : bs)
-  | name == name' = TopBind () name e : bs
+updateTopBinding name e (b'@(TopBind name' _) : bs)
+  | name == name' = TopBind name e : bs
   | otherwise = b' : updateTopBinding name e bs
 
 data Outcome =
     Stuck
-  | Update (ClosedExpr TopId) [TopBinding Eval]
+  | Update (ClosedExpr TopId) [TopBinding]
   | Jump TopId
 
 wrapOutcomeExpr :: ExprWrapper TopId -> Outcome -> Outcome
@@ -96,7 +94,7 @@ wrapOutcomeExpr _ outcome@Stuck{} = outcome
 wrapOutcomeExpr _ outcome@Jump{}  = outcome
 wrapOutcomeExpr ew (Update e bs) = Update (wrapExpr ew e) bs
 
-type TopEnv = Map TopId (TopBinding Inert)
+type TopEnv = Map TopId TopBinding
 
 isValueHNF :: Value TopId -> Bool
 isValueHNF v =
@@ -122,17 +120,17 @@ freshId env (VB x) =
     n:_ -> TopIdGen x (n + 1)
 
 -- NB: We assume that the VarBndrs in the list have unique names.
-generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding Eval] (HList (Const (Value TopId)) out)
+generateTopBindings :: TopEnv -> HList (Binding TopId '[]) out -> State [TopBinding] (HList (Const (Value TopId)) out)
 generateTopBindings _ HNil = return HNil
 generateTopBindings env (Bind varBndr e :& bs) = do
   e' <- generateTopBinding env varBndr e
   fmap (Const e' :&) (generateTopBindings env bs)
 
-generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding Eval] (Value TopId)
+generateTopBinding :: TopEnv -> VarBndr v -> Expr TopId '[] -> State [TopBinding] (Value TopId)
 generateTopBinding _ _ (ValE val) = return val
 generateTopBinding env varBndr e = do
   let x = freshId env varBndr
-  modify (TopBind () x e :)
+  modify (TopBind x e :)
   return (RefV x)
 
 evalstepExpr :: TopEnv -> ClosedExpr TopId -> Outcome
@@ -144,7 +142,7 @@ evalstepExpr env (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
   | otherwise = wrapOutcomeExpr (CaseEW bs) (evalstepExpr env e)
 evalstepExpr env (ValE (RefV ref))
-  | Just (TopBind _ _ e) <- Map.lookup ref env
+  | Just (TopBind _ e) <- Map.lookup ref env
   , isExprWHNF e
   = Update (extendExprCtx e) []
   | otherwise = Jump ref
@@ -253,29 +251,14 @@ matchIntegerBinOp primop =
     Integer_div -> Just div
     _ -> Nothing
 
-gcSweepTopBindings :: [TopBinding GarbageMarked] -> [TopBinding Eval]
-gcSweepTopBindings = mapMaybe sweep
+gcComputeLiveSet :: NE.NonEmpty TopId -> [TopBinding] -> LiveSet GarbageMarked
+gcComputeLiveSet roots topBinds = liveSet
   where
-    sweep :: TopBinding GarbageMarked -> Maybe (TopBinding Eval)
-    sweep (TopBind Live name e) = Just $ TopBind () name e
-    sweep (TopBind Dead _ _) = Nothing
-
-gcMarkTopBindings :: NE.NonEmpty TopId -> [TopBinding Eval] -> [TopBinding GarbageMarked]
-gcMarkTopBindings roots topBinds = map mark topBinds
-  where
-    mark :: TopBinding Eval -> TopBinding GarbageMarked
-    mark (TopBind _ name e) = TopBind (isLive name) name e
-
     env = mkTopEnv topBinds
     liveSet = execState (traverse_ goExpr rootExprs) visited
       where
         rootExprs = fmap getExpr roots
         visited = Set.fromList (NE.toList roots)
-
-    isLive :: TopId -> MarkBit
-    isLive name
-      | Set.member name liveSet = Live
-      | otherwise = Dead
 
     getExpr :: TopId -> ClosedExpr TopId
     getExpr name = getTopBindingExpr (unwrapBindingLookup (Map.lookup name env))

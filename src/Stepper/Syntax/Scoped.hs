@@ -7,6 +7,7 @@ import Data.IText
 import Data.Inductive
 import Data.Functor.Const
 import Data.List.NonEmpty (NonEmpty)
+import Data.Set (Set)
 
 import Stepper.Syntax.Basic
 
@@ -35,33 +36,27 @@ data SPhase phase where
 
 deriving instance Show (SPhase phase)
 
-data MarkBit = Dead | Live
-  deriving Show
-
-type family GarbageMark phase where
-  GarbageMark GarbageMarked = MarkBit
-  GarbageMark _             = ()
-
 type family EvalStack phase where
   EvalStack Eval          = NonEmpty TopId
   EvalStack GarbageMarked = NonEmpty TopId
   EvalStack _    = ()
 
+type family LiveSet phase where
+  LiveSet GarbageMarked = Set TopId
+  LiveSet _             = ()
+
 type Module :: Phase -> Type
-data Module phase = Mod [TopBinding phase] (EvalStack phase)
-deriving instance (Show (GarbageMark phase), Show (EvalStack phase)) => Show (Module phase)
+data Module phase = Mod [TopBinding] (EvalStack phase) (LiveSet phase)
+deriving instance (Show (EvalStack phase), Show (LiveSet phase)) => Show (Module phase)
 
-data TopBinding phase = TopBind (GarbageMark phase) TopId (ClosedExpr TopId)
-deriving instance Show (GarbageMark phase) => Show (TopBinding phase)
+data TopBinding = TopBind TopId (ClosedExpr TopId)
+  deriving Show
 
-coerceTopBinding :: (GarbageMark phase1 ~ GarbageMark phase2) => TopBinding phase1 -> TopBinding phase2
-coerceTopBinding (TopBind garbageMark name e) = TopBind garbageMark name e
+getTopBindingId :: TopBinding -> TopId
+getTopBindingId (TopBind name _) = name
 
-getTopBindingId :: TopBinding phase -> TopId
-getTopBindingId (TopBind _ name _) = name
-
-getTopBindingExpr :: TopBinding phase -> ClosedExpr TopId
-getTopBindingExpr (TopBind _ _ e) = e
+getTopBindingExpr :: TopBinding -> ClosedExpr TopId
+getTopBindingExpr (TopBind _ e) = e
 
 type Value :: Type -> Type
 type Value ref = ValueExpr ref '[]

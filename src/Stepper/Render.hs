@@ -52,9 +52,9 @@ renderStats phase reductions gcs = resetOrigin $
   (punct "GCs: " `horiz` punct (Text.pack (show gcs)))
 
 renderModule :: (?lctx :: LayoutCtx) => SPhase phase -> Extents -> Module phase -> Layout
-renderModule phase extents (Mod bs stk) =
+renderModule phase extents (Mod bs stk liveSet) =
   resetOrigin $
-  case fill extents (map (renderTopBinding phase stk) bs) of
+  case fill extents (map (renderTopBinding phase stk liveSet) bs) of
     Nothing -> punct "Empty module"
     Just layout -> layout
 
@@ -75,10 +75,10 @@ fill extents (item:items) =
         xPos' = rowLayout'.bottomRight.x
         rowLayout' = rowLayout `horiz` rowItem
 
-renderTopBinding :: (?lctx :: LayoutCtx) => SPhase phase -> EvalStack phase -> TopBinding phase -> Layout
-renderTopBinding phase stk (TopBind garbageMark name e) =
+renderTopBinding :: (?lctx :: LayoutCtx) => SPhase phase -> EvalStack phase -> LiveSet phase -> TopBinding -> Layout
+renderTopBinding phase stk liveSet (TopBind name e) =
   withStyle ?lctx.style $
-  resetOrigin $ padded $ framedTopBinding phase stk garbageMark name $ padded $
+  resetOrigin $ padded $ framedTopBinding phase stk liveSet name $ padded $
     renderTopId name `horiz` punct " = " `horiz` renderExpr topPrec HNil e
 
 renderTopId :: (?lctx :: LayoutCtx) => TopId -> Layout
@@ -102,15 +102,15 @@ renderPrefix f v =
 
 type Prec = Int
 
-framedTopBinding :: (?style :: Style) => SPhase phase -> EvalStack phase -> GarbageMark phase -> TopId -> Layout -> Layout
+framedTopBinding :: (?style :: Style) => SPhase phase -> EvalStack phase -> LiveSet phase -> TopId -> Layout -> Layout
 framedTopBinding SInert _ _ _  = framed ?style.borderWidth ?style.borderColor . padded
 framedTopBinding SEval stk _ name = framed ?style.borderWidth color . padded
   where color | elem name stk = ?style.borderColorEval
               | otherwise     = ?style.borderColor
-framedTopBinding SGarbageMarked stk markBit name = framed ?style.borderWidth color . padded
-  where color | elem name stk   = ?style.borderColorEval
-              | Dead <- markBit = ?style.borderColorDead
-              | Live <- markBit = ?style.borderColorLive
+framedTopBinding SGarbageMarked stk liveSet name = framed ?style.borderWidth color . padded
+  where color | elem name stk     = ?style.borderColorEval
+              | elem name liveSet = ?style.borderColorLive
+              | otherwise         = ?style.borderColorDead
 
 framedIf :: (?style :: Style) => Bool -> Layout -> Layout
 framedIf True  = framed ?style.borderWidth ?style.borderColor . padded
