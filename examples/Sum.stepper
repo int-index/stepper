@@ -1,3 +1,6 @@
+add = \a b -> case a of { a' -> case b of { b' -> Integer.add(a', b') } }
+mul = \a b -> case a of { a' -> case b of { b' -> Integer.mul(a', b') } }
+
 map = \f xs ->
   case xs of
     Nil() -> Nil()
@@ -13,8 +16,6 @@ foldr = \f base xs ->
 
 sum = foldr add +0
 
-add = \a b -> Integer.add(a, b)
-
 inputlist = Cons(+1, Cons(+2, Cons(+3, Nil())))
 
-result = sum (map (\a -> Integer.mul(a, +2)) inputlist)
+result = sum (map (mul +2) inputlist)

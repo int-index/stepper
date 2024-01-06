@@ -1,5 +1,9 @@
-z = Integer.add(y, y)
+add = \a b -> case a of { a' -> case b of { b' -> Integer.add(a', b') } }
+mul = \a b -> case a of { a' -> case b of { b' -> Integer.mul(a', b') } }
+div = \a b -> case a of { a' -> case b of { b' -> Integer.div(a', b') } }
+
+z = add y y
 
 y = x
 
-x = Integer.add(Integer.mul(-2, +3), Integer.div(+100, +2))
+x = add (mul -2 +3) (div +100 +2)

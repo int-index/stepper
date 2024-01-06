@@ -96,10 +96,6 @@ mapOutcomeExpr _ outcome@Stuck{} = outcome
 mapOutcomeExpr _ outcome@Jump{}  = outcome
 mapOutcomeExpr f (Update e bs) = Update (f e) bs
 
-orIfStuck :: Outcome -> Outcome -> Outcome
-Stuck `orIfStuck` r = r
-r `orIfStuck` _ = r
-
 type TopEnv = Map TopId (TopBinding Inert)
 
 isValueHNF :: Value TopId -> Bool
@@ -140,19 +136,10 @@ generateTopBinding env varBndr e = do
   return (RefV x)
 
 evalstepExpr :: TopEnv -> ClosedExpr TopId -> Outcome
-evalstepExpr env (PrimCallE primop [lhs, rhs])
-  | Just f <- matchNaturalBinOp primop
-  = evalstepNaturalBinOp f lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
-  | Just f <- matchIntegerBinOp primop
-  = evalstepIntegerBinOp f lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
-  | Integer_eq <- primop
-  = evalstepIntegerEq lhs rhs `orIfStuck`
-    mapOutcomeExpr (\lhs' -> PrimCallE primop [lhs', rhs]) (evalstepExpr env lhs) `orIfStuck`
-    mapOutcomeExpr (\rhs' -> PrimCallE primop [lhs, rhs']) (evalstepExpr env rhs)
+evalstepExpr _ (PrimCallE primop [lhs, rhs])
+  | Just f <- matchNaturalBinOp primop = evalstepNaturalBinOp f lhs rhs
+  | Just f <- matchIntegerBinOp primop = evalstepIntegerBinOp f lhs rhs
+  | Integer_eq <- primop = evalstepIntegerEq lhs rhs
 evalstepExpr env (CaseE e bs)
   | ValE val <- e, isValueHNF val = evalstepCaseOfVal val bs
   | otherwise = mapOutcomeExpr (\e' -> CaseE e' bs) (evalstepExpr env e)

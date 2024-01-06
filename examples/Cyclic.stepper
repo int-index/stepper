@@ -1,3 +1,6 @@
+add = \a b -> case a of { a' -> case b of { b' -> Natural.add(a', b') } }
+mul = \a b -> case a of { a' -> case b of { b' -> Natural.mul(a', b') } }
+
 fix = \f -> let r = f r in r
 
 fib = fib' 0 1
@@ -5,9 +8,9 @@ fib = fib' 0 1
 fib' = fix \self -> \a b i ->
   case i of
     0 -> a
-    _ ->
-      let b' = Natural.add(a, b)
-          i' = Natural.sub(i, 1)
-      in self b b' i'
+    i' ->
+      let b'  = add a b
+          i'' = Natural.sub(i', 1)
+      in self b b' i''
 
-result = fib Natural.add(1, Natural.mul(2, 5))
+result = fib (add 1 (mul 2 5))

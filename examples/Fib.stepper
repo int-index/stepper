@@ -1,11 +1,15 @@
+add = \a b -> case a of { a' -> case b of { b' -> Natural.add(a', b') } }
+sub = \a b -> case a of { a' -> case b of { b' -> Natural.sub(a', b') } }
+mul = \a b -> case a of { a' -> case b of { b' -> Natural.mul(a', b') } }
+
 fib = fib' 0 1
 
 fib' = \a b i ->
   case i of
     0 -> a
     _ ->
-      let b' = Natural.add(a, b)
-          i' = Natural.sub(i, 1)
+      let b' = add a b
+          i' = sub i 1
       in fib' b b' i'
 
-result = fib Natural.add(1, Natural.mul(2, 5))
+result = fib (add 1 (mul 2 5))

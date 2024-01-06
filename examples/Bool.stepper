@@ -1,3 +1,5 @@
+eq = \a b -> case a of { a' -> case b of { b' -> Integer.eq(a', b') } }
+
 and = \a b ->
   case a of
     False() -> False()
@@ -8,4 +10,4 @@ or = \a b ->
     False() -> b
     True()  -> True()
 
-result = or (and Integer.eq(+0, +0) Integer.eq(+0, +1)) Integer.eq(+1, +1)
+result = or (and (eq +0 +0) (eq +0 +1)) (eq +1 +1)
