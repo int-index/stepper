@@ -24,9 +24,11 @@
         });
     in
     {
-      packages.${system}.stepper = haskellPackages.stepper;
-      defaultPackage.${system} = self.packages.${system}.stepper;
-      devShell.${system} = pkgs.mkShell {
+      packages.${system} = {
+        stepper = haskellPackages.stepper;
+        default = self.packages.${system}.stepper;
+      };
+      devShells.${system}.default = pkgs.mkShell {
         buildInputs = [
           (haskellPackages.ghcWithPackages(p: p.stepper.getCabalDeps.executableHaskellDepends))
           haskellPackages.stepper.getCabalDeps.executableToolDepends
