@@ -1,19 +1,25 @@
 {
   description = "stepper";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
     let
-      system = "x86_64-linux";
       ghc = "ghc96";
       pkgs = nixpkgs.legacyPackages.${system};
 
       /* workaround for https://github.com/NixOS/nixpkgs/issues/41340 */
       fixGtkDeps = pkg:
-        pkg.overrideAttrs(oldAttrs: {strictDeps = true; buildInputs = [
-          pkgs.graphene pkgs.gdk-pixbuf pkgs.gtk4 pkgs.pcre pkgs.pcre2
-          pkgs.util-linux.dev pkgs.libselinux pkgs.libsepol pkgs.fribidi
-          pkgs.libthai pkgs.libdatrie pkgs.xorg.libXdmcp pkgs.expat
-        ];});
+        if pkgs.stdenv.isLinux then
+          pkg.overrideAttrs(oldAttrs: {strictDeps = true; buildInputs = [
+            pkgs.graphene pkgs.gdk-pixbuf pkgs.gtk4 pkgs.pcre pkgs.pcre2
+            pkgs.util-linux.dev pkgs.libselinux pkgs.libsepol pkgs.fribidi
+            pkgs.libthai pkgs.libdatrie pkgs.xorg.libXdmcp pkgs.expat
+          ];})
+        else pkg;
 
       haskellPackages =
         pkgs.haskell.packages.${ghc}.extend(hself: hsuper: {
@@ -24,11 +30,11 @@
         });
     in
     {
-      packages.${system} = {
+      packages = {
         stepper = haskellPackages.stepper;
-        default = self.packages.${system}.stepper;
+        default = haskellPackages.stepper;
       };
-      devShells.${system}.default = pkgs.mkShell {
+      devShells.default = pkgs.mkShell {
         buildInputs = [
           (haskellPackages.ghcWithPackages(p: p.stepper.getCabalDeps.executableHaskellDepends))
           haskellPackages.stepper.getCabalDeps.executableToolDepends
@@ -37,5 +43,5 @@
           haskellPackages.cabal-install
         ];
       };
-    };
+    });
 }
